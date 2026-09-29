@@ -89,6 +89,24 @@ class App {
         return;
       }
 
+      // Spacebar or ArrowDown: Advance to next coin and open chart
+      if (e.code === "Space" || e.key === " " || e.key === "ArrowDown") {
+        e.preventDefault();
+        if (e.shiftKey && (e.code === "Space" || e.key === " ")) {
+          this.watchlist.selectPrevSymbol();
+        } else {
+          this.watchlist.selectNextSymbol();
+        }
+        return;
+      }
+
+      // ArrowUp: Go back to previous coin and open chart
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        this.watchlist.selectPrevSymbol();
+        return;
+      }
+
       if (e.key === "/") {
         e.preventDefault();
         const searchInput = document.getElementById("wl-search") as HTMLInputElement | null;

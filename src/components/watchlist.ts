@@ -175,7 +175,7 @@ export class WatchlistComponent {
     return { added, removed };
   }
 
-  public setActiveSymbol(symbol: string): void {
+  public setActiveSymbol(symbol: string, shouldScroll = false): void {
     if (this.activeSymbol === symbol) return;
     const oldRow = this.rowElements.get(this.activeSymbol)?.row;
     oldRow?.classList.remove("active");
@@ -183,6 +183,43 @@ export class WatchlistComponent {
     this.activeSymbol = symbol;
     const newRow = this.rowElements.get(symbol)?.row;
     newRow?.classList.add("active");
+
+    if (shouldScroll && newRow) {
+      newRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
+
+  /**
+   * Advances to the next coin in the current watchlist view, highlights it,
+   * scrolls into view, and triggers its chart load
+   */
+  public selectNextSymbol(): string | null {
+    if (this.sortedSymbols.length === 0) return null;
+    const currentIndex = this.sortedSymbols.indexOf(this.activeSymbol);
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % this.sortedSymbols.length : 0;
+    const nextSymbol = this.sortedSymbols[nextIndex];
+
+    this.setActiveSymbol(nextSymbol, true);
+    this.onSelectSymbol(nextSymbol);
+    return nextSymbol;
+  }
+
+  /**
+   * Moves to the previous coin in the current watchlist view, highlights it,
+   * scrolls into view, and triggers its chart load
+   */
+  public selectPrevSymbol(): string | null {
+    if (this.sortedSymbols.length === 0) return null;
+    const currentIndex = this.sortedSymbols.indexOf(this.activeSymbol);
+    const prevIndex =
+      currentIndex >= 0
+        ? (currentIndex - 1 + this.sortedSymbols.length) % this.sortedSymbols.length
+        : this.sortedSymbols.length - 1;
+    const prevSymbol = this.sortedSymbols[prevIndex];
+
+    this.setActiveSymbol(prevSymbol, true);
+    this.onSelectSymbol(prevSymbol);
+    return prevSymbol;
   }
 
   /**

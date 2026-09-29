@@ -25,6 +25,12 @@ A high-performance personal crypto charting platform for **Binance Futures (USDT
   - Live Kline WebSocket feed (`<symbol>@kline_<interval>`) pushing candle updates in real-time.
   - Auto-reconnect with exponential backoff and connection status indicator.
 
+- **Keyboard Quick Navigation (TradingView Style)**:
+  - <kbd>Space</kbd> or <kbd>↓</kbd>: Jump to the next coin in the watchlist, auto-scroll to it, and load its chart.
+  - <kbd>Shift</kbd> + <kbd>Space</kbd> or <kbd>↑</kbd>: Jump to the previous coin and load its chart.
+  - <kbd>/</kbd>: Focus the watchlist search bar.
+  - <kbd>Esc</kbd>: Unfocus search bar / close popovers.
+
 - **Vercel & Static Host Ready**:
   - Zero backend server dependencies. The browser connects directly to Binance's public endpoints.
   - Deployable to Vercel, Cloudflare Pages, Netlify, or GitHub Pages.
