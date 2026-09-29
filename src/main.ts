@@ -1,12 +1,8 @@
 import "./style.css";
 import type { CandleData, Timeframe, WatchlistTicker } from "./types";
 import { ChartManager } from "./chart/chartManager";
-import {
-  AllTickersSocketClient,
-  fetchFutures24hTickers,
-  fetchKlines,
-  KlineSocketClient,
-} from "./api/binance";
+import { AllTickersSocketClient, fetchFutures24hTickers, KlineSocketClient } from "./api/binance";
+import { candleCache } from "./api/candleCache";
 import { WatchlistComponent } from "./components/watchlist";
 import { HeaderComponent } from "./components/header";
 import { ToolbarComponent } from "./components/toolbar";
@@ -186,9 +182,27 @@ class App {
   }
 
   private async loadCandles(symbol: string, interval: Timeframe): Promise<void> {
-    try {
+    const cached = candleCache.get(symbol, interval);
+    if (cached) {
+      // 0ms instantaneous render from in-memory cache
+      this.hideLoading();
+      this.chartManager.setData(cached);
+      const lastCandle = cached[cached.length - 1];
+      if (lastCandle) {
+        this.header.updatePriceOnly(lastCandle.close);
+      }
+      this.triggerPrefetch();
+      return;
+    }
+
+    // Avoid flashing loading screen for fast requests
+    const spinnerTimer = window.setTimeout(() => {
       this.showLoading(`Loading ${symbol} (${interval}) chart data...`);
-      const candles = await fetchKlines(symbol, interval, 1000);
+    }, 120);
+
+    try {
+      const { candles } = await candleCache.getOrFetch(symbol, interval, 500);
+      window.clearTimeout(spinnerTimer);
       this.chartManager.setData(candles);
       this.hideLoading();
 
@@ -196,11 +210,19 @@ class App {
       if (lastCandle) {
         this.header.updatePriceOnly(lastCandle.close);
       }
+
+      this.triggerPrefetch();
     } catch (err) {
+      window.clearTimeout(spinnerTimer);
       console.error(`Failed to load klines for ${symbol}:`, err);
       this.showLoading(`Error loading ${symbol} chart. Retrying...`);
-      setTimeout(() => this.loadCandles(symbol, interval), 3000);
+      setTimeout(() => void this.loadCandles(symbol, interval), 3000);
     }
+  }
+
+  private triggerPrefetch(): void {
+    const nextSymbols = this.watchlist.getAdjacentSymbols(5);
+    void candleCache.prefetch(nextSymbols, this.activeTimeframe, 500);
   }
 
   private startKlineSocket(): void {
@@ -274,11 +296,7 @@ class App {
 
   private hideLoading(): void {
     this.loadingOverlay.style.opacity = "0";
-    setTimeout(() => {
-      if (this.loadingOverlay.style.opacity === "0") {
-        this.loadingOverlay.style.display = "none";
-      }
-    }, 200);
+    this.loadingOverlay.style.display = "none";
   }
 }
 

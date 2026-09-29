@@ -223,6 +223,22 @@ export class WatchlistComponent {
   }
 
   /**
+   * Returns the next N symbols following the current active symbol
+   * for predictive lookahead caching
+   */
+  public getAdjacentSymbols(count = 4): string[] {
+    if (this.sortedSymbols.length <= 1) return [];
+    const currentIndex = this.sortedSymbols.indexOf(this.activeSymbol);
+    const result: string[] = [];
+
+    for (let i = 1; i <= count; i++) {
+      const nextIdx = (currentIndex + i) % this.sortedSymbols.length;
+      result.push(this.sortedSymbols[nextIdx]);
+    }
+    return result;
+  }
+
+  /**
    * Applies partial updates pushed from WebSocket without rebuilding whole DOM
    */
   public updateTickerPrices(updates: Map<string, Partial<WatchlistTicker>>): void {
