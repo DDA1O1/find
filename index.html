@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="theme-color" content="#131722" />
+    <title>TradingView | Binance Futures</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="app" class="app-root">
+      <header id="app-header" class="app-header"></header>
+
+      <div class="app-body">
+        <main class="chart-section">
+          <div id="app-toolbar" class="app-toolbar"></div>
+
+          <div class="chart-wrapper">
+            <div id="chart-legend" class="chart-legend"></div>
+            <div id="chart-container" class="chart-container"></div>
+
+            <div id="chart-loading" class="chart-loading-overlay">
+              <div class="chart-spinner"></div>
+              <span id="chart-loading-text">Loading Binance market data...</span>
+            </div>
+          </div>
+        </main>
+
+        <aside id="app-watchlist" class="app-watchlist"></aside>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
