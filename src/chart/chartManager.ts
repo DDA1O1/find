@@ -35,7 +35,7 @@ export class ChartManager {
   private currentChartType: ChartType = "candles";
   private candles: CandleData[] = [];
   private indicatorSettings: IndicatorSettings = {
-    ema20: true,
+    ema20: false,
     ema50: false,
     sma200: false,
     bollingerBands: false,
