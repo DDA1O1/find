@@ -10,27 +10,63 @@ import type {
 const REST_BASE = "https://fapi.binance.com";
 const WS_BASE = "wss://fstream.binance.com/market";
 
+interface ExchangeSymbolInfo {
+  symbol: string;
+  status: string;
+  contractType: string;
+  quoteAsset: string;
+}
+
 /**
- * Fetches 24h ticker data for all Binance USDT-M Futures pairs
+ * Fetches 24h ticker data for all active Binance USDT-M Futures pairs.
+ * Cross-references with exchangeInfo to automatically filter out settled/delisted
+ * contracts and include newly trading perpetuals.
  */
 export async function fetchFutures24hTickers(): Promise<WatchlistTicker[]> {
-  const res = await fetch(`${REST_BASE}/fapi/v1/ticker/24hr`);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch tickers: HTTP ${res.status}`);
+  const [infoRes, tickerRes] = await Promise.all([
+    fetch(`${REST_BASE}/fapi/v1/exchangeInfo`).catch(() => null),
+    fetch(`${REST_BASE}/fapi/v1/ticker/24hr`),
+  ]);
+
+  if (!tickerRes.ok) {
+    throw new Error(`Failed to fetch tickers: HTTP ${tickerRes.status}`);
   }
 
-  const rawTickers: BinanceTicker24hr[] = await res.json();
+  const rawTickers: BinanceTicker24hr[] = await tickerRes.json();
   const savedFavorites = getSavedFavorites();
 
-  // Filter for active USDT perpetual contracts
+  // Valid perpetual contracts currently TRADING
+  let validPerpetualSymbols: Set<string> | null = null;
+  const contractTypeMap = new Map<string, string>();
+  if (infoRes && infoRes.ok) {
+    const exchangeInfo: { symbols: ExchangeSymbolInfo[] } = await infoRes.json();
+    for (const s of exchangeInfo.symbols) {
+      if (
+        s.status === "TRADING" &&
+        s.quoteAsset === "USDT" &&
+        (s.contractType === "PERPETUAL" || s.contractType === "TRADIFI_PERPETUAL")
+      ) {
+        contractTypeMap.set(s.symbol, s.contractType);
+      }
+    }
+    validPerpetualSymbols = new Set(contractTypeMap.keys());
+  }
+
+  // Filter for active USDT perpetual contracts only
   const usdtTickers = rawTickers
-    .filter((t) => t.symbol.endsWith("USDT"))
+    .filter((t) => {
+      if (validPerpetualSymbols) {
+        return validPerpetualSymbols.has(t.symbol);
+      }
+      return t.symbol.endsWith("USDT") && !t.symbol.includes("_");
+    })
     .map((t) => {
       const base = t.symbol.replace(/USDT$/, "");
       return {
         symbol: t.symbol,
         baseAsset: base,
         quoteAsset: "USDT",
+        contractType: contractTypeMap.get(t.symbol) || "PERPETUAL",
         price: parseFloat(t.lastPrice),
         prevPrice: parseFloat(t.lastPrice),
         change24h: parseFloat(t.priceChangePercent),

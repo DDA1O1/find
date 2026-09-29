@@ -2,7 +2,14 @@ import type { WatchlistTicker } from "../types";
 import { formatPercent, formatPrice, formatVolume } from "../utils/formatters";
 import { getSavedFavorites, saveFavorites } from "../api/binance";
 
-export type WatchlistFilter = "all" | "favorites" | "gainers" | "losers" | "volume";
+export type WatchlistFilter =
+  | "all"
+  | "crypto"
+  | "tradifi"
+  | "favorites"
+  | "gainers"
+  | "losers"
+  | "volume";
 
 export class WatchlistComponent {
   private container: HTMLElement;
@@ -65,6 +72,8 @@ export class WatchlistComponent {
 
         <div class="watchlist-tabs">
           <button class="wl-tab active" data-filter="all">All</button>
+          <button class="wl-tab" data-filter="crypto">Crypto</button>
+          <button class="wl-tab" data-filter="tradifi">TradiFi</button>
           <button class="wl-tab" data-filter="favorites">★ Starred</button>
           <button class="wl-tab" data-filter="gainers">Gainers</button>
           <button class="wl-tab" data-filter="losers">Losers</button>
@@ -119,6 +128,51 @@ export class WatchlistComponent {
       this.tickers.set(t.symbol, t);
     }
     this.updateView();
+  }
+
+  /**
+   * Automatically synchronizes new coin listings and purges delisted coins
+   */
+  public syncTickers(freshTickers: WatchlistTicker[]): { added: string[]; removed: string[] } {
+    const freshMap = new Map<string, WatchlistTicker>();
+    for (const t of freshTickers) {
+      t.isFavorite = this.favorites.has(t.symbol);
+      freshMap.set(t.symbol, t);
+    }
+
+    const added: string[] = [];
+    const removed: string[] = [];
+
+    // Find added coins
+    for (const [symbol, fresh] of freshMap) {
+      if (!this.tickers.has(symbol)) {
+        added.push(symbol);
+        this.tickers.set(symbol, fresh);
+      } else {
+        const current = this.tickers.get(symbol)!;
+        current.price = fresh.price;
+        current.change24h = fresh.change24h;
+        current.high24h = fresh.high24h;
+        current.low24h = fresh.low24h;
+        current.volume24h = fresh.volume24h;
+        current.quoteVolume24h = fresh.quoteVolume24h;
+      }
+    }
+
+    // Find removed/purged coins
+    for (const symbol of this.tickers.keys()) {
+      if (!freshMap.has(symbol)) {
+        removed.push(symbol);
+        this.tickers.delete(symbol);
+      }
+    }
+
+    // Rebuild view only if coins were added or removed
+    if (added.length > 0 || removed.length > 0) {
+      this.updateView();
+    }
+
+    return { added, removed };
   }
 
   public setActiveSymbol(symbol: string): void {
@@ -186,7 +240,11 @@ export class WatchlistComponent {
     }
 
     // Tab filter
-    if (this.currentFilter === "favorites") {
+    if (this.currentFilter === "crypto") {
+      list = list.filter((t) => t.contractType === "PERPETUAL" || !t.contractType);
+    } else if (this.currentFilter === "tradifi") {
+      list = list.filter((t) => t.contractType === "TRADIFI_PERPETUAL");
+    } else if (this.currentFilter === "favorites") {
       list = list.filter((t) => t.isFavorite);
     } else if (this.currentFilter === "gainers") {
       list = list.sort((a, b) => b.change24h - a.change24h);
@@ -242,6 +300,7 @@ export class WatchlistComponent {
           <div class="wl-sym-title">
             <span class="base">${ticker.baseAsset}</span>
             <span class="quote">/USDT</span>
+            ${ticker.contractType === "TRADIFI_PERPETUAL" ? '<span class="wl-tradifi-tag">TRADIFI</span>' : ""}
           </div>
           <div class="wl-sym-vol">${formatVolume(ticker.quoteVolume24h)}</div>
         </div>

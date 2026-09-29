@@ -121,11 +121,50 @@ class App {
 
       // Start kline socket for active symbol
       this.startKlineSocket();
+
+      // Start automatic periodic catalog sync for new listings and delisted coins
+      this.startCatalogAutoSync();
     } catch (err) {
       console.error("Failed to load initial market data:", err);
       this.showLoading(`Connection error: ${(err as Error).message}. Retrying in 5s...`);
-      setTimeout(() => this.loadInitialMarketData(), 5000);
+      setTimeout(() => void this.loadInitialMarketData(), 5000);
     }
+  }
+
+  private catalogSyncInterval: number | null = null;
+
+  /**
+   * Automatically synchronizes new Binance Futures listings and purges delisted pairs every 2 minutes
+   */
+  private startCatalogAutoSync(): void {
+    if (this.catalogSyncInterval) return;
+
+    this.catalogSyncInterval = window.setInterval(async () => {
+      try {
+        const freshTickers = await fetchFutures24hTickers();
+        const { added, removed } = this.watchlist.syncTickers(freshTickers);
+
+        for (const t of freshTickers) {
+          this.allTickers.set(t.symbol, t);
+        }
+        for (const sym of removed) {
+          this.allTickers.delete(sym);
+        }
+
+        if (added.length > 0) {
+          console.info(
+            `[Binance Catalog] Added ${added.length} new contract(s): ${added.join(", ")}`,
+          );
+        }
+        if (removed.length > 0) {
+          console.info(
+            `[Binance Catalog] Purged ${removed.length} delisted contract(s): ${removed.join(", ")}`,
+          );
+        }
+      } catch (err) {
+        console.warn("[Binance Catalog] Auto-sync failed:", err);
+      }
+    }, 120000);
   }
 
   private async loadCandles(symbol: string, interval: Timeframe): Promise<void> {
