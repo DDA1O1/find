@@ -205,10 +205,19 @@ export class ToolbarComponent {
     const isPos = change >= 0;
     const colorClass = isPos ? "pos" : "neg";
 
+    const dateStr = new Date(candle.time * 1000).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+
     this.legendContainer.innerHTML = `
       <div class="legend-content">
         <span class="leg-sym">${symbol}</span>
-        <span class="leg-tag">${isHovered ? "INSPECT" : "LATEST"}</span>
+        <span class="leg-tag ${isHovered ? "inspecting" : ""}">${isHovered ? "INSPECT" : "LATEST"}</span>
+        <span class="leg-time">${dateStr}</span>
         <span class="leg-item"><span class="leg-lbl">O</span> <span class="${colorClass}">${formatPrice(candle.open)}</span></span>
         <span class="leg-item"><span class="leg-lbl">H</span> <span class="${colorClass}">${formatPrice(candle.high)}</span></span>
         <span class="leg-item"><span class="leg-lbl">L</span> <span class="${colorClass}">${formatPrice(candle.low)}</span></span>

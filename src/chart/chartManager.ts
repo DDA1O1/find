@@ -44,6 +44,8 @@ export class ChartManager {
 
   private resizeObserver: ResizeObserver | null = null;
   private onLegendUpdate?: (data: { candle: CandleData | null; isHovered: boolean }) => void;
+  private isHovering = false;
+  private hoveredCandle: CandleData | null = null;
 
   constructor(
     container: HTMLElement,
@@ -156,20 +158,54 @@ export class ChartManager {
 
       if (
         !param.point ||
-        !param.time ||
         param.point.x < 0 ||
         param.point.x > this.container.clientWidth ||
         param.point.y < 0 ||
         param.point.y > this.container.clientHeight
       ) {
+        this.isHovering = false;
+        this.hoveredCandle = null;
         const lastCandle = this.candles.length > 0 ? this.candles[this.candles.length - 1] : null;
         this.onLegendUpdate({ candle: lastCandle, isHovered: false });
         return;
       }
 
-      const candleMap = this.candlesMap();
-      const candle = candleMap.get(param.time as number) || null;
-      this.onLegendUpdate({ candle, isHovered: true });
+      let candle: CandleData | null = null;
+      if (param.time) {
+        candle = this.candlesMap().get(param.time as number) || null;
+      }
+
+      if (!candle && param.seriesData) {
+        const bar = param.seriesData.get(this.candleSeries) as
+          | { time: number; open: number; high: number; low: number; close: number }
+          | undefined;
+        if (bar && bar.open !== undefined) {
+          const volData = param.seriesData.get(this.volumeSeries) as { value: number } | undefined;
+          candle = {
+            time: bar.time,
+            open: bar.open,
+            high: bar.high,
+            low: bar.low,
+            close: bar.close,
+            volume: volData?.value || 0,
+          };
+        }
+      }
+
+      if (candle) {
+        this.isHovering = true;
+        this.hoveredCandle = candle;
+        this.onLegendUpdate({ candle, isHovered: true });
+      }
+    });
+
+    this.container.addEventListener("mouseleave", () => {
+      this.isHovering = false;
+      this.hoveredCandle = null;
+      if (this.onLegendUpdate) {
+        const lastCandle = this.candles.length > 0 ? this.candles[this.candles.length - 1] : null;
+        this.onLegendUpdate({ candle: lastCandle, isHovered: false });
+      }
     });
   }
 
@@ -275,6 +311,8 @@ export class ChartManager {
    * Sets historical candle data
    */
   public setData(candles: CandleData[]): void {
+    this.isHovering = false;
+    this.hoveredCandle = null;
     this.candles = candles;
     this._candlesMapCache = null;
 
@@ -372,7 +410,14 @@ export class ChartManager {
     }
 
     if (this.onLegendUpdate) {
-      this.onLegendUpdate({ candle, isHovered: false });
+      if (this.isHovering) {
+        if (this.hoveredCandle && this.hoveredCandle.time === candle.time) {
+          this.hoveredCandle = candle;
+          this.onLegendUpdate({ candle, isHovered: true });
+        }
+      } else {
+        this.onLegendUpdate({ candle, isHovered: false });
+      }
     }
   }
 
