@@ -72,7 +72,7 @@ export class WatchlistComponent {
               <span class="m-icon">⚡</span> Binance Futures
             </button>
             <button class="market-switch-btn ${this.marketMode === "tradifi_stocks" ? "active" : ""}" data-market="tradifi_stocks">
-              <span class="m-icon">🏛️</span> TradFi Stocks (>100K Vol)
+              <span class="m-icon">🏛️</span> TradFi Stocks (> $1M Vol)
             </button>
           </div>
         </div>
@@ -93,7 +93,7 @@ export class WatchlistComponent {
             <circle cx="11" cy="11" r="8"/>
             <path d="m21 21-4.3-4.3"/>
           </svg>
-          <input type="text" id="wl-search" placeholder="${this.marketMode === "crypto_futures" ? "Search crypto pairs (BTC, ETH, SOL)..." : "Search 5,200+ stocks (AAPL, NVDA, SPY)..."}" spellcheck="false" autocomplete="off" />
+          <input type="text" id="wl-search" placeholder="${this.marketMode === "crypto_futures" ? "Search crypto pairs (BTC, ETH, SOL)..." : "Search stocks (AAPL, NVDA, SPY)..."}" spellcheck="false" autocomplete="off" />
           <button id="wl-clear" class="btn-clear" title="Clear search" style="display: none;">×</button>
         </div>
 
@@ -162,7 +162,7 @@ export class WatchlistComponent {
     this.searchInput.placeholder =
       mode === "crypto_futures"
         ? "Search crypto pairs (BTC, ETH, SOL)..."
-        : "Search 5,200+ stocks (AAPL, NVDA, SPY)...";
+        : "Search stocks (AAPL, NVDA, SPY)...";
 
     this.marketSwitchBtns.forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.market === mode);
@@ -184,7 +184,7 @@ export class WatchlistComponent {
       `;
     } else {
       this.tabsContainerEl.innerHTML = `
-        <button class="wl-tab ${this.currentFilter === "all" ? "active" : ""}" data-filter="all">All (5.3K)</button>
+        <button class="wl-tab ${this.currentFilter === "all" ? "active" : ""}" data-filter="all">All</button>
         <button class="wl-tab ${this.currentFilter === "stocks" ? "active" : ""}" data-filter="stocks">Stocks</button>
         <button class="wl-tab ${this.currentFilter === "etfs" ? "active" : ""}" data-filter="etfs">ETFs</button>
         <button class="wl-tab ${this.currentFilter === "favorites" ? "active" : ""}" data-filter="favorites">★ Starred</button>
