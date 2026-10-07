@@ -796,6 +796,112 @@ span.neg {
   border-radius: 3px;
 }
 
+.wl-change.neutral {
+  color: var(--text-muted);
+  background-color: transparent;
+}
+
+/* Market Switcher */
+.market-switcher-container {
+  width: 100%;
+}
+
+.market-switch-group {
+  display: flex;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.market-switch-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.market-switch-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-tertiary);
+}
+
+.market-switch-btn.active {
+  color: #ffffff;
+  background-color: var(--color-accent);
+}
+
+.market-switch-btn .m-icon {
+  font-size: 12px;
+}
+
+/* Header stock subtitle & badges */
+.sym-name-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.active-sym-subtitle {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.contract-badge.stock {
+  color: #00d2d3;
+  background-color: rgba(0, 210, 211, 0.12);
+  border: 1px solid rgba(0, 210, 211, 0.3);
+}
+
+.contract-badge.etf {
+  color: #a29bfe;
+  background-color: rgba(162, 155, 254, 0.12);
+  border: 1px solid rgba(162, 155, 254, 0.3);
+}
+
+.wl-stock-tag {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
+.wl-stock-tag.stock {
+  color: #00d2d3;
+  background-color: rgba(0, 210, 211, 0.15);
+  border: 1px solid rgba(0, 210, 211, 0.35);
+}
+
+.wl-stock-tag.etf {
+  color: #a29bfe;
+  background-color: rgba(162, 155, 254, 0.15);
+  border: 1px solid rgba(162, 155, 254, 0.35);
+}
+
+.wl-stock-name {
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 170px;
+}
+
 /* Responsive adjustments */
 @media (max-width: 900px) {
   .stats-row {

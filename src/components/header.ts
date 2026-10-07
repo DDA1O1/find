@@ -1,18 +1,23 @@
-import type { WatchlistTicker } from "../types";
+import type { MarketMode, WatchlistTicker } from "../types";
 import { formatPercent, formatPrice, formatVolume } from "../utils/formatters";
 
 export class HeaderComponent {
   private container: HTMLElement;
   private currentTicker: WatchlistTicker | null = null;
+  private currentMarket: MarketMode = "crypto_futures";
   private onToggleSidebar: () => void;
   private onFitChart: () => void;
 
   private symbolTitleEl!: HTMLElement;
+  private symbolSubtitleEl!: HTMLElement;
+  private contractBadgeEl!: HTMLElement;
+  private brandSubEl!: HTMLElement;
   private priceEl!: HTMLElement;
   private changeEl!: HTMLElement;
   private highEl!: HTMLElement;
   private lowEl!: HTMLElement;
   private volEl!: HTMLElement;
+  private volLabelEl!: HTMLElement;
   private statusDotEl!: HTMLElement;
   private statusTextEl!: HTMLElement;
   private fullscreenBtn!: HTMLButtonElement;
@@ -34,8 +39,8 @@ export class HeaderComponent {
             <path d="M7 16V12M12 16V8M17 16V10" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
           </svg>
           <div class="brand-text">
-            <span class="brand-title">TRADINGVIEW <span class="accent">FUTURES</span></span>
-            <span class="brand-sub">BINANCE USDT-M</span>
+            <span class="brand-title">TRADINGVIEW <span class="accent">PRO</span></span>
+            <span class="brand-sub" id="hdr-brand-sub">BINANCE USDT-M</span>
           </div>
         </div>
 
@@ -43,8 +48,11 @@ export class HeaderComponent {
 
         <div class="active-sym-container">
           <div class="active-sym-meta">
-            <h1 class="active-sym-title" id="hdr-symbol">BTCUSDT</h1>
-            <span class="contract-badge">PERP</span>
+            <div class="sym-name-group">
+              <h1 class="active-sym-title" id="hdr-symbol">BTCUSDT</h1>
+              <span class="active-sym-subtitle" id="hdr-subtitle"></span>
+            </div>
+            <span class="contract-badge" id="hdr-badge">PERP</span>
           </div>
           <div class="active-price-box">
             <span class="active-price" id="hdr-price">--</span>
@@ -62,14 +70,14 @@ export class HeaderComponent {
             <span class="stat-val" id="hdr-low">--</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">24h Vol (USDT)</span>
+            <span class="stat-label" id="hdr-vol-lbl">24h Vol (USDT)</span>
             <span class="stat-val" id="hdr-vol">--</span>
           </div>
         </div>
       </div>
 
       <div class="header-right">
-        <div class="status-indicator" id="hdr-status" title="Binance WebSocket Connection">
+        <div class="status-indicator" id="hdr-status" title="Market Feed Status">
           <span class="status-dot connecting" id="hdr-status-dot"></span>
           <span class="status-text" id="hdr-status-text">Connecting...</span>
         </div>
@@ -100,11 +108,15 @@ export class HeaderComponent {
     `;
 
     this.symbolTitleEl = this.container.querySelector("#hdr-symbol")!;
+    this.symbolSubtitleEl = this.container.querySelector("#hdr-subtitle")!;
+    this.contractBadgeEl = this.container.querySelector("#hdr-badge")!;
+    this.brandSubEl = this.container.querySelector("#hdr-brand-sub")!;
     this.priceEl = this.container.querySelector("#hdr-price")!;
     this.changeEl = this.container.querySelector("#hdr-change")!;
     this.highEl = this.container.querySelector("#hdr-high")!;
     this.lowEl = this.container.querySelector("#hdr-low")!;
     this.volEl = this.container.querySelector("#hdr-vol")!;
+    this.volLabelEl = this.container.querySelector("#hdr-vol-lbl")!;
     this.statusDotEl = this.container.querySelector("#hdr-status-dot")!;
     this.statusTextEl = this.container.querySelector("#hdr-status-text")!;
     this.fullscreenBtn = this.container.querySelector("#hdr-fullscreen")!;
@@ -119,19 +131,45 @@ export class HeaderComponent {
     this.fullscreenBtn.addEventListener("click", () => this.toggleFullscreen());
   }
 
-  public setTicker(ticker: WatchlistTicker): void {
+  public setTicker(ticker: WatchlistTicker, marketMode: MarketMode = "crypto_futures"): void {
     this.currentTicker = { ...ticker };
+    this.currentMarket = marketMode;
 
     this.symbolTitleEl.textContent = ticker.symbol;
-    this.priceEl.textContent = formatPrice(ticker.price);
 
-    const isPos = ticker.change24h >= 0;
-    this.changeEl.textContent = formatPercent(ticker.change24h);
-    this.changeEl.className = `active-change ${isPos ? "pos" : "neg"}`;
+    if (marketMode === "tradifi_stocks") {
+      this.brandSubEl.textContent = "US TRADIFI SPOT";
+      this.symbolSubtitleEl.textContent = ticker.name || "";
+      this.symbolSubtitleEl.style.display = ticker.name ? "inline" : "none";
+      this.contractBadgeEl.textContent = ticker.contractType || "STOCK";
+      this.contractBadgeEl.className = `contract-badge ${ticker.contractType === "ETF" ? "etf" : "stock"}`;
+      this.volLabelEl.textContent = "24h Vol (USD)";
+    } else {
+      this.brandSubEl.textContent = "BINANCE USDT-M";
+      this.symbolSubtitleEl.textContent = "";
+      this.symbolSubtitleEl.style.display = "none";
+      this.contractBadgeEl.textContent =
+        ticker.contractType === "TRADIFI_PERPETUAL" ? "TRADIFI" : "PERP";
+      this.contractBadgeEl.className = "contract-badge perp";
+      this.volLabelEl.textContent = "24h Vol (USDT)";
+    }
 
-    this.highEl.textContent = formatPrice(ticker.high24h);
-    this.lowEl.textContent = formatPrice(ticker.low24h);
-    this.volEl.textContent = formatVolume(ticker.quoteVolume24h);
+    if (ticker.price > 0) {
+      this.priceEl.textContent = formatPrice(ticker.price);
+      const isPos = ticker.change24h >= 0;
+      this.changeEl.textContent = formatPercent(ticker.change24h);
+      this.changeEl.className = `active-change ${isPos ? "pos" : "neg"}`;
+      this.highEl.textContent = formatPrice(ticker.high24h);
+      this.lowEl.textContent = formatPrice(ticker.low24h);
+      this.volEl.textContent = formatVolume(ticker.quoteVolume24h);
+    } else {
+      this.priceEl.textContent = "--";
+      this.changeEl.textContent = "--";
+      this.changeEl.className = "active-change";
+      this.highEl.textContent = "--";
+      this.lowEl.textContent = "--";
+      this.volEl.textContent = "--";
+    }
   }
 
   public updatePriceOnly(price: number): void {
@@ -142,10 +180,16 @@ export class HeaderComponent {
     this.priceEl.textContent = formatPrice(price);
   }
 
-  public setStatus(status: "connecting" | "connected" | "disconnected"): void {
+  public setStatus(
+    status: "connecting" | "connected" | "disconnected",
+    customLabel?: string,
+  ): void {
     this.statusDotEl.className = `status-dot ${status}`;
-    if (status === "connected") {
-      this.statusTextEl.textContent = "Live Feed";
+    if (customLabel) {
+      this.statusTextEl.textContent = customLabel;
+    } else if (status === "connected") {
+      this.statusTextEl.textContent =
+        this.currentMarket === "tradifi_stocks" ? "Live Feed" : "Live Socket";
     } else if (status === "connecting") {
       this.statusTextEl.textContent = "Connecting...";
     } else {

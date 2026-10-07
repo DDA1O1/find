@@ -14,7 +14,7 @@ describe("CandleCacheManager", () => {
 
     manager.set("BTCUSDT", "15m", dummyCandles);
     const retrieved = manager.get("BTCUSDT", "15m");
-    expect(retrieved).toEqual(dummyCandles);
+    expect(retrieved?.candles).toEqual(dummyCandles);
   });
 
   it("returns null on cache miss", () => {
@@ -26,8 +26,16 @@ describe("CandleCacheManager", () => {
     const manager = new CandleCacheManager();
     manager.set("BTCUSDT", "15m", dummyCandles);
 
-    expect(manager.get("BTCUSDT", "15m")).toEqual(dummyCandles);
+    expect(manager.get("BTCUSDT", "15m")?.candles).toEqual(dummyCandles);
     expect(manager.get("BTCUSDT", "1h")).toBeNull();
+  });
+
+  it("detects stock vs futures symbols correctly", () => {
+    const manager = new CandleCacheManager();
+    expect(manager.isStock("AAPL")).toBe(true);
+    expect(manager.isStock("NVDA")).toBe(true);
+    expect(manager.isStock("SPY")).toBe(true);
+    expect(manager.isStock("BTCUSDT")).toBe(false);
   });
 
   it("clears all cache entries on clear()", () => {

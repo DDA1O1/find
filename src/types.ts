@@ -17,11 +17,24 @@ export interface BinanceTicker24hr {
   count: number;
 }
 
+export type MarketMode = "crypto_futures" | "tradifi_stocks";
+
+export interface StockItem {
+  s: string; // Symbol
+  n: string; // Company / ETF Name
+  t: "STOCK" | "ETF"; // Type
+  p?: number; // Snapshot price
+  c?: number; // Snapshot 24h change %
+  v?: number; // Daily volume
+}
+
 export interface WatchlistTicker {
   symbol: string;
   baseAsset: string;
   quoteAsset: string;
   contractType?: string;
+  name?: string;
+  market?: MarketMode;
   price: number;
   prevPrice?: number;
   change24h: number;
