@@ -893,6 +893,19 @@ span.neg {
   border: 1px solid rgba(162, 155, 254, 0.35);
 }
 
+.wl-cons-tag {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 5px;
+  vertical-align: middle;
+  color: #fbbf24;
+  background-color: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
 .wl-stock-name {
   font-size: 10px;
   color: var(--text-secondary);

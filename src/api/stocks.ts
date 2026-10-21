@@ -55,6 +55,17 @@ export async function fetchStocksCatalog(): Promise<WatchlistTicker[]> {
     volume24h: item.v || 0,
     quoteVolume24h: item.v ? item.v * (item.p || 1) : 0,
     isFavorite: savedFavorites.has(item.s),
+    consolidation: item.cons
+      ? {
+          weeks: item.cons.w,
+          rangePercent: item.cons.r,
+          lastWeekRange: item.cons.lwr,
+          prevWeekRange: item.cons.pwr,
+          volDryRatio: item.cons.vdr,
+          highestBody: item.cons.h,
+          lowestBody: item.cons.l,
+        }
+      : undefined,
   }));
 
   cachedStocksCatalog = tickers;

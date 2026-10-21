@@ -12,7 +12,15 @@ export type CryptoFilter =
   | "losers"
   | "volume";
 
-export type StockFilter = "all" | "stocks" | "etfs" | "favorites" | "gainers" | "losers" | "volume";
+export type StockFilter =
+  | "all"
+  | "stocks"
+  | "etfs"
+  | "consolidation"
+  | "favorites"
+  | "gainers"
+  | "losers"
+  | "volume";
 
 export class WatchlistComponent {
   private container: HTMLElement;
@@ -72,7 +80,7 @@ export class WatchlistComponent {
               <span class="m-icon">⚡</span> Binance Futures
             </button>
             <button class="market-switch-btn ${this.marketMode === "tradifi_stocks" ? "active" : ""}" data-market="tradifi_stocks">
-              <span class="m-icon">🏛️</span> TradFi Stocks (> $1M Vol)
+              <span class="m-icon">🏛️</span> TradFi Stocks (≥ 500K Vol)
             </button>
           </div>
         </div>
@@ -187,6 +195,7 @@ export class WatchlistComponent {
         <button class="wl-tab ${this.currentFilter === "all" ? "active" : ""}" data-filter="all">All</button>
         <button class="wl-tab ${this.currentFilter === "stocks" ? "active" : ""}" data-filter="stocks">Stocks</button>
         <button class="wl-tab ${this.currentFilter === "etfs" ? "active" : ""}" data-filter="etfs">ETFs</button>
+        <button class="wl-tab ${this.currentFilter === "consolidation" ? "active" : ""}" data-filter="consolidation">VCP (≤7%)</button>
         <button class="wl-tab ${this.currentFilter === "favorites" ? "active" : ""}" data-filter="favorites">★ Starred</button>
         <button class="wl-tab ${this.currentFilter === "gainers" ? "active" : ""}" data-filter="gainers">Gainers</button>
         <button class="wl-tab ${this.currentFilter === "losers" ? "active" : ""}" data-filter="losers">Losers</button>
@@ -403,6 +412,15 @@ export class WatchlistComponent {
         list = list.filter((t) => t.contractType === "STOCK");
       } else if (this.currentFilter === "etfs") {
         list = list.filter((t) => t.contractType === "ETF");
+      } else if (this.currentFilter === "consolidation") {
+        list = list
+          .filter((t) => t.consolidation != null)
+          .slice()
+          .sort(
+            (a, b) =>
+              (a.consolidation!.lastWeekRange ?? 99) - (b.consolidation!.lastWeekRange ?? 99) ||
+              b.consolidation!.weeks - a.consolidation!.weeks,
+          );
       } else if (this.currentFilter === "favorites") {
         list = list.filter((t) => t.isFavorite);
       } else if (this.currentFilter === "gainers") {
@@ -466,6 +484,14 @@ export class WatchlistComponent {
         tagHtml = '<span class="wl-stock-tag etf">ETF</span>';
       } else if (isStockMode && ticker.contractType === "STOCK") {
         tagHtml = '<span class="wl-stock-tag stock">STOCK</span>';
+      }
+
+      if (ticker.consolidation) {
+        const lwr =
+          ticker.consolidation.lastWeekRange !== undefined
+            ? ` • Coil: ${ticker.consolidation.lastWeekRange}%`
+            : "";
+        tagHtml += `<span class="wl-cons-tag" title="VCP: ${ticker.consolidation.weeks}W base (${ticker.consolidation.rangePercent}%). Latest week: ${ticker.consolidation.lastWeekRange ?? 0}% with volume dry-up.">VCP ${ticker.consolidation.weeks}W • ${ticker.consolidation.rangePercent}%${lwr}</span>`;
       }
 
       const quoteDisplay = isStockMode ? "/USD" : "/USDT";

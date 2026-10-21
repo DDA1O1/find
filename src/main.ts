@@ -171,7 +171,7 @@ class App {
   }
 
   private async loadStockMarket(): Promise<void> {
-    this.showLoading(`Loading TradFi Stocks & ETFs catalog (> $1M Daily Vol, 4,000+ symbols)...`);
+    this.showLoading(`Loading TradFi Stocks & ETFs catalog (≥ 500K Daily Vol, 2,600+ symbols)...`);
 
     // Stop crypto sockets
     this.stopSockets();
