@@ -56,32 +56,32 @@ export class ChartManager {
 
     this.chart = createChart(container, {
       layout: {
-        background: { type: ColorType.Solid, color: "#131722" },
-        textColor: "#848e9c",
-        fontSize: 12,
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif",
+        background: { type: ColorType.Solid, color: "#080a0f" },
+        textColor: "#64748b",
+        fontSize: 11,
+        fontFamily: "'JetBrains Mono', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif",
       },
       grid: {
-        vertLines: { color: "rgba(42, 46, 57, 0.5)" },
-        horzLines: { color: "rgba(42, 46, 57, 0.5)" },
+        vertLines: { color: "rgba(255, 255, 255, 0.025)" },
+        horzLines: { color: "rgba(255, 255, 255, 0.025)" },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
-          color: "#758696",
+          color: "rgba(148, 163, 184, 0.4)",
           width: 1,
           style: 3, // dashed
-          labelBackgroundColor: "#2a2e39",
+          labelBackgroundColor: "#161c2d",
         },
         horzLine: {
-          color: "#758696",
+          color: "rgba(148, 163, 184, 0.4)",
           width: 1,
           style: 3,
-          labelBackgroundColor: "#2a2e39",
+          labelBackgroundColor: "#161c2d",
         },
       },
       timeScale: {
-        borderColor: "#2a2e39",
+        borderColor: "rgba(255, 255, 255, 0.06)",
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 12,
@@ -89,7 +89,7 @@ export class ChartManager {
         minBarSpacing: 2,
       },
       rightPriceScale: {
-        borderColor: "#2a2e39",
+        borderColor: "rgba(255, 255, 255, 0.06)",
         scaleMargins: {
           top: 0.1,
           bottom: 0.22, // leave room for volume
@@ -111,11 +111,11 @@ export class ChartManager {
 
     // Main Candlestick series
     this.candleSeries = this.chart.addSeries(CandlestickSeries, {
-      upColor: "#089981",
-      downColor: "#f23645",
+      upColor: "#10b981",
+      downColor: "#f43f5e",
       borderVisible: false,
-      wickUpColor: "#089981",
-      wickDownColor: "#f23645",
+      wickUpColor: "#10b981",
+      wickDownColor: "#f43f5e",
       priceFormat: {
         type: "price",
         precision: 4,
@@ -221,18 +221,18 @@ export class ChartManager {
   }
 
   private createIndicatorSeries(): void {
-    // EMA 20 (Cyan)
+    // EMA 20 (Electric Blue)
     this.ema20Series = this.chart.addSeries(LineSeries, {
-      color: "#2962ff",
+      color: "#3b82f6",
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
     });
 
-    // EMA 50 (Orange)
+    // EMA 50 (Vibrant Amber)
     this.ema50Series = this.chart.addSeries(LineSeries, {
-      color: "#ff9800",
+      color: "#f59e0b",
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -241,16 +241,16 @@ export class ChartManager {
 
     // SMA 200 (Purple)
     this.sma200Series = this.chart.addSeries(LineSeries, {
-      color: "#9c27b0",
+      color: "#a855f7",
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
     });
 
-    // Bollinger Bands (Blue gray)
+    // Bollinger Bands (Cyan)
     this.bbUpperSeries = this.chart.addSeries(LineSeries, {
-      color: "rgba(33, 150, 243, 0.7)",
+      color: "rgba(6, 182, 212, 0.75)",
       lineWidth: 1,
       lineStyle: 2, // dashed
       priceLineVisible: false,
@@ -258,14 +258,14 @@ export class ChartManager {
       crosshairMarkerVisible: false,
     });
     this.bbMiddleSeries = this.chart.addSeries(LineSeries, {
-      color: "rgba(33, 150, 243, 0.4)",
+      color: "rgba(6, 182, 212, 0.4)",
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
     });
     this.bbLowerSeries = this.chart.addSeries(LineSeries, {
-      color: "rgba(33, 150, 243, 0.7)",
+      color: "rgba(6, 182, 212, 0.75)",
       lineWidth: 1,
       lineStyle: 2,
       priceLineVisible: false,
@@ -331,7 +331,7 @@ export class ChartManager {
     const formattedVolume = candles.map((c) => ({
       time: c.time as UTCTimestamp,
       value: c.volume,
-      color: c.close >= c.open ? "rgba(8, 153, 129, 0.4)" : "rgba(242, 54, 69, 0.4)",
+      color: c.close >= c.open ? "rgba(16, 185, 129, 0.4)" : "rgba(244, 63, 94, 0.4)",
     }));
 
     if (this.currentChartType === "candles") {
