@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "vp dev",
     "build": "tsc && vp build",
-    "preview": "vp preview",
-    "scan:consolidations": "node scripts/scan-consolidations.js"
+    "preview": "vp preview"
   },
   "dependencies": {
     "lightweight-charts": "^5.2.1"

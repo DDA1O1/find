@@ -1,5 +1,5 @@
 import "./style.css";
-import type { Timeframe, WatchlistTicker } from "./types";
+import type { CandleData, Timeframe, WatchlistTicker } from "./types";
 import { ChartManager } from "./chart/chartManager";
 import { AllTickersSocketClient, fetchFutures24hTickers, KlineSocketClient } from "./api/binance";
 import { candleCache } from "./api/candleCache";
@@ -11,7 +11,7 @@ class App {
   private activeSymbol: string;
   private activeTimeframe: Timeframe;
 
-  private allCryptoTickers: Map<string, WatchlistTicker> = new Map();
+  private allTickers: Map<string, WatchlistTicker> = new Map();
 
   private chartManager!: ChartManager;
   private klineSocket: KlineSocketClient | null = null;
@@ -26,7 +26,7 @@ class App {
   private watchlistAside = document.getElementById("app-watchlist")!;
 
   constructor() {
-    this.activeSymbol = localStorage.getItem("tv_active_crypto_symbol") || "BTCUSDT";
+    this.activeSymbol = localStorage.getItem("tv_active_symbol") || "BTCUSDT";
     this.activeTimeframe = (localStorage.getItem("tv_active_timeframe") as Timeframe) || "1d";
 
     void this.init();
@@ -60,12 +60,10 @@ class App {
       (settings) => this.chartManager.setIndicators(settings),
     );
 
-    // 4. Initialize Watchlist for Binance Futures
+    // 4. Initialize Binance Futures Watchlist
     const watchlistEl = document.getElementById("app-watchlist")!;
-    this.watchlist = new WatchlistComponent(
-      watchlistEl,
-      this.activeSymbol,
-      (newSymbol) => this.handleSymbolChange(newSymbol),
+    this.watchlist = new WatchlistComponent(watchlistEl, this.activeSymbol, (newSymbol) =>
+      this.handleSymbolChange(newSymbol),
     );
 
     // 5. Setup Keyboard Shortcuts (Spacebar, Arrows, / for Search)
@@ -119,15 +117,15 @@ class App {
       this.showLoading(`Loading Binance Futures pairs...`);
       const tickers = await fetchFutures24hTickers();
 
-      this.allCryptoTickers.clear();
+      this.allTickers.clear();
       for (const t of tickers) {
-        this.allCryptoTickers.set(t.symbol, t);
+        this.allTickers.set(t.symbol, t);
       }
 
       this.watchlist.setTickers(tickers);
       this.watchlist.setActiveSymbol(this.activeSymbol);
 
-      const currentTicker = this.allCryptoTickers.get(this.activeSymbol);
+      const currentTicker = this.allTickers.get(this.activeSymbol);
       if (currentTicker) {
         this.header.setTicker(currentTicker);
       }
@@ -144,7 +142,7 @@ class App {
       // Background auto-sync for newly listed & purged futures
       this.startCatalogAutoSync();
     } catch (err) {
-      console.error("Failed to load initial market data:", err);
+      console.error("Failed to load Binance Futures data:", err);
       this.showLoading(`Connection error: ${(err as Error).message}. Retrying in 5s...`);
       setTimeout(() => void this.loadInitialMarketData(), 5000);
     }
@@ -161,10 +159,10 @@ class App {
         const { added, removed } = this.watchlist.syncTickers(freshTickers);
 
         for (const t of freshTickers) {
-          this.allCryptoTickers.set(t.symbol, t);
+          this.allTickers.set(t.symbol, t);
         }
         for (const sym of removed) {
-          this.allCryptoTickers.delete(sym);
+          this.allTickers.delete(sym);
         }
 
         if (added.length > 0) {
@@ -237,9 +235,10 @@ class App {
     this.klineSocket = new KlineSocketClient(
       this.activeSymbol,
       this.activeTimeframe,
-      (candle, isClosed) => {
+      (candle: CandleData, isClosed: boolean) => {
         this.chartManager.updateCandle(candle, isClosed);
         this.header.updatePriceOnly(candle.close);
+        this.watchlist.updateSingleTickerPrice(this.activeSymbol, candle.close);
       },
       (status) => {
         this.header.setStatus(status);
@@ -255,7 +254,7 @@ class App {
 
       const activeUpdate = updates.get(this.activeSymbol);
       if (activeUpdate) {
-        const current = this.allCryptoTickers.get(this.activeSymbol);
+        const current = this.allTickers.get(this.activeSymbol);
         if (current) {
           Object.assign(current, activeUpdate);
           this.header.setTicker(current);
@@ -267,9 +266,9 @@ class App {
   private async handleSymbolChange(symbol: string): Promise<void> {
     if (this.activeSymbol === symbol) return;
     this.activeSymbol = symbol;
-    localStorage.setItem("tv_active_crypto_symbol", symbol);
+    localStorage.setItem("tv_active_symbol", symbol);
 
-    const ticker = this.allCryptoTickers.get(symbol);
+    const ticker = this.allTickers.get(symbol);
     if (ticker) {
       this.header.setTicker(ticker);
     }

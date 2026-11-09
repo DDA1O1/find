@@ -225,6 +225,24 @@ export class WatchlistComponent {
     }
   }
 
+  public updateSingleTickerPrice(symbol: string, price: number): void {
+    const ticker = this.tickers.get(symbol);
+    if (!ticker) return;
+    const oldPrice = ticker.price;
+    ticker.price = price;
+
+    const refs = this.rowElements.get(symbol);
+    if (!refs) return;
+
+    refs.priceEl.textContent = formatPrice(price);
+    if (oldPrice > 0 && price !== oldPrice) {
+      const flashClass = price > oldPrice ? "flash-up" : "flash-down";
+      refs.priceEl.classList.remove("flash-up", "flash-down");
+      void refs.priceEl.offsetWidth; // trigger reflow
+      refs.priceEl.classList.add(flashClass);
+    }
+  }
+
   private filterAndSort(): string[] {
     let list = Array.from(this.tickers.values());
 
