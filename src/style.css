@@ -500,6 +500,18 @@ input {
   color: #ffffff;
 }
 
+.leg-tag.yahoo-src {
+  background-color: rgba(255, 152, 0, 0.18);
+  color: #ff9800;
+  border: 1px solid rgba(255, 152, 0, 0.4);
+}
+
+.leg-tag.binance-src {
+  background-color: rgba(240, 185, 11, 0.15);
+  color: #f0b90b;
+  border: 1px solid rgba(240, 185, 11, 0.35);
+}
+
 .leg-time {
   font-size: 10px;
   color: var(--text-muted);

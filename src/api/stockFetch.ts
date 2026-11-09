@@ -63,17 +63,17 @@ export function mapTimeframeToYahoo(tf: Timeframe): { interval: string; range: s
     case "30m":
       return { interval: "30m", range: "1mo" };
     case "1h":
-      return { interval: "1h", range: "3mo" };
+      return { interval: "1h", range: "2y" };
     case "2h":
-      return { interval: "1h", range: "6mo" };
+      return { interval: "1h", range: "2y" };
     case "4h":
-      return { interval: "1h", range: "1y" };
+      return { interval: "1h", range: "2y" };
     case "1d":
-      return { interval: "1d", range: "5y" };
+      return { interval: "1d", range: "10y" };
     case "1w":
       return { interval: "1wk", range: "10y" };
     default:
-      return { interval: "1d", range: "5y" };
+      return { interval: "1d", range: "10y" };
   }
 }
 
@@ -142,9 +142,11 @@ export function parseYahooChart(data: YahooChartResponse): StockCandleResponse {
 export async function fetchStockCandles(
   symbol: string,
   timeframe: Timeframe,
+  range?: string,
 ): Promise<StockCandleResponse> {
   const cleanSymbol = symbol.trim().toUpperCase();
-  const url = `/api/stock-candles?symbol=${encodeURIComponent(cleanSymbol)}&interval=${timeframe}`;
+  const rangeQuery = range ? `&range=${encodeURIComponent(range)}` : "";
+  const url = `/api/stock-candles?symbol=${encodeURIComponent(cleanSymbol)}&interval=${timeframe}${rangeQuery}`;
 
   const res = await fetch(url);
   if (!res.ok) {

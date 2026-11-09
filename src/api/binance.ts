@@ -6,6 +6,11 @@ import type {
   WsKlineMessage,
   WsTickerMessage,
 } from "../types";
+import {
+  getTradFiStockName,
+  isTradFiFuturesSymbol,
+  registerTradFiPerpetualSymbol,
+} from "./tradifiPairs";
 
 const REST_BASE = "https://fapi.binance.com";
 const WS_BASE = "wss://fstream.binance.com/market";
@@ -46,6 +51,9 @@ export async function fetchFutures24hTickers(): Promise<WatchlistTicker[]> {
         s.quoteAsset === "USDT" &&
         (s.contractType === "PERPETUAL" || s.contractType === "TRADIFI_PERPETUAL")
       ) {
+        if (s.contractType === "TRADIFI_PERPETUAL") {
+          registerTradFiPerpetualSymbol(s.symbol);
+        }
         contractTypeMap.set(s.symbol, s.contractType);
       }
     }
@@ -62,11 +70,18 @@ export async function fetchFutures24hTickers(): Promise<WatchlistTicker[]> {
     })
     .map((t) => {
       const base = t.symbol.replace(/USDT$/, "");
+      const isTradFi = isTradFiFuturesSymbol(t.symbol, contractTypeMap.get(t.symbol));
+      const contractType = isTradFi
+        ? "TRADIFI_PERPETUAL"
+        : contractTypeMap.get(t.symbol) || "PERPETUAL";
+      const stockName = isTradFi ? getTradFiStockName(base) : undefined;
+
       return {
         symbol: t.symbol,
         baseAsset: base,
         quoteAsset: "USDT",
-        contractType: contractTypeMap.get(t.symbol) || "PERPETUAL",
+        name: stockName,
+        contractType,
         price: parseFloat(t.lastPrice),
         prevPrice: parseFloat(t.lastPrice),
         change24h: parseFloat(t.priceChangePercent),

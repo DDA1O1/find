@@ -72,6 +72,7 @@ export interface CandleData {
   low: number;
   close: number;
   volume: number;
+  source?: "binance" | "yahoo";
 }
 
 export interface WsKlineMessage {

@@ -15,17 +15,17 @@ function mapTimeframeToYahoo(tf: string): { interval: string; range: string } {
     case "30m":
       return { interval: "30m", range: "1mo" };
     case "1h":
-      return { interval: "1h", range: "3mo" };
+      return { interval: "1h", range: "2y" };
     case "2h":
-      return { interval: "1h", range: "6mo" };
+      return { interval: "1h", range: "2y" };
     case "4h":
-      return { interval: "1h", range: "1y" };
+      return { interval: "1h", range: "2y" };
     case "1d":
-      return { interval: "1d", range: "5y" };
+      return { interval: "1d", range: "10y" };
     case "1w":
       return { interval: "1wk", range: "10y" };
     default:
-      return { interval: "1d", range: "5y" };
+      return { interval: "1d", range: "10y" };
   }
 }
 
@@ -50,8 +50,10 @@ export default async function handler(
       .trim()
       .toUpperCase();
     const intervalParam = req.query?.interval || urlObj.searchParams.get("interval") || "1d";
+    const rangeParam = req.query?.range || urlObj.searchParams.get("range");
 
-    const { interval, range } = mapTimeframeToYahoo(intervalParam);
+    const { interval, range: defaultRange } = mapTimeframeToYahoo(intervalParam);
+    const range = rangeParam || defaultRange;
     const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
 
     const yahooRes = await fetch(yahooUrl, {

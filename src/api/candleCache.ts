@@ -1,6 +1,7 @@
 import type { CandleData, Timeframe } from "../types";
 import { fetchKlines } from "./binance";
 import { fetchStockCandles, type StockQuoteMeta } from "./stockFetch";
+import { getUnderlyingStockSymbol, mergeHistoricalCandles } from "./tradifiPairs";
 
 interface CacheEntry {
   candles: CandleData[];
@@ -98,11 +99,40 @@ export class CandleCacheManager {
         const { candles, meta } = await fetchStockCandles(symbol, timeframe);
         this.set(symbol, timeframe, candles, meta);
         return { candles, meta };
-      } else {
-        const candles = await fetchKlines(symbol, timeframe, limit);
-        this.set(symbol, timeframe, candles);
-        return { candles };
       }
+
+      // Check if this Binance futures pair is a TradFi stock perpetual (e.g. NVDAUSDT, TSLAUSDT)
+      const tradFiStock = getUnderlyingStockSymbol(symbol);
+      if (tradFiStock) {
+        // Fetch Binance candles and Yahoo historical stock candles concurrently
+        const [binanceResult, yahooResult] = await Promise.allSettled([
+          fetchKlines(symbol, timeframe, limit),
+          fetchStockCandles(tradFiStock, timeframe),
+        ]);
+
+        const binanceCandles = binanceResult.status === "fulfilled" ? binanceResult.value : [];
+        const yahooCandles = yahooResult.status === "fulfilled" ? yahooResult.value.candles : [];
+        const yahooMeta = yahooResult.status === "fulfilled" ? yahooResult.value.meta : undefined;
+
+        if (binanceCandles.length > 0 && yahooCandles.length > 0) {
+          const merged = mergeHistoricalCandles(binanceCandles, yahooCandles, timeframe);
+          this.set(symbol, timeframe, merged, yahooMeta);
+          return { candles: merged, meta: yahooMeta };
+        } else if (binanceCandles.length > 0) {
+          this.set(symbol, timeframe, binanceCandles);
+          return { candles: binanceCandles };
+        } else if (yahooCandles.length > 0) {
+          this.set(symbol, timeframe, yahooCandles, yahooMeta);
+          return { candles: yahooCandles, meta: yahooMeta };
+        } else {
+          throw new Error(`Failed to load chart data for ${symbol}`);
+        }
+      }
+
+      // Pure crypto perpetual contract (e.g. BTCUSDT)
+      const candles = await fetchKlines(symbol, timeframe, limit);
+      this.set(symbol, timeframe, candles);
+      return { candles };
     })().finally(() => {
       this.inFlightRequests.delete(key);
     });

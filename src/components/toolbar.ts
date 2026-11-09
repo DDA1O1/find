@@ -213,9 +213,17 @@ export class ToolbarComponent {
       hour12: false,
     });
 
+    const sourceTag =
+      candle.source === "yahoo"
+        ? '<span class="leg-tag yahoo-src" title="Historical stock data prior to Binance listing (Yahoo Finance)">YAHOO</span>'
+        : candle.source === "binance"
+          ? '<span class="leg-tag binance-src" title="Binance USDT-M Perpetual candle">BINANCE</span>'
+          : "";
+
     this.legendContainer.innerHTML = `
       <div class="legend-content">
         <span class="leg-sym">${symbol}</span>
+        ${sourceTag}
         <span class="leg-tag ${isHovered ? "inspecting" : ""}">${isHovered ? "INSPECT" : "LATEST"}</span>
         <span class="leg-time">${dateStr}</span>
         <span class="leg-item"><span class="leg-lbl">O</span> <span class="${colorClass}">${formatPrice(candle.open)}</span></span>
