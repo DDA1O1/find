@@ -1,10 +1,9 @@
-import type { MarketMode, WatchlistTicker } from "../types";
+import type { WatchlistTicker } from "../types";
 import { formatPercent, formatPrice, formatVolume } from "../utils/formatters";
 
 export class HeaderComponent {
   private container: HTMLElement;
   private currentTicker: WatchlistTicker | null = null;
-  private currentMarket: MarketMode = "crypto_futures";
   private onToggleSidebar: () => void;
   private onFitChart: () => void;
 
@@ -131,28 +130,17 @@ export class HeaderComponent {
     this.fullscreenBtn.addEventListener("click", () => this.toggleFullscreen());
   }
 
-  public setTicker(ticker: WatchlistTicker, marketMode: MarketMode = "crypto_futures"): void {
+  public setTicker(ticker: WatchlistTicker): void {
     this.currentTicker = { ...ticker };
-    this.currentMarket = marketMode;
 
     this.symbolTitleEl.textContent = ticker.symbol;
-
-    if (marketMode === "tradifi_stocks") {
-      this.brandSubEl.textContent = "US TRADIFI SPOT";
-      this.symbolSubtitleEl.textContent = ticker.name || "";
-      this.symbolSubtitleEl.style.display = ticker.name ? "inline" : "none";
-      this.contractBadgeEl.textContent = ticker.contractType || "STOCK";
-      this.contractBadgeEl.className = `contract-badge ${ticker.contractType === "ETF" ? "etf" : "stock"}`;
-      this.volLabelEl.textContent = "24h Vol (USD)";
-    } else {
-      this.brandSubEl.textContent = "BINANCE USDT-M";
-      this.symbolSubtitleEl.textContent = "";
-      this.symbolSubtitleEl.style.display = "none";
-      this.contractBadgeEl.textContent =
-        ticker.contractType === "TRADIFI_PERPETUAL" ? "TRADIFI" : "PERP";
-      this.contractBadgeEl.className = "contract-badge perp";
-      this.volLabelEl.textContent = "24h Vol (USDT)";
-    }
+    this.brandSubEl.textContent = "BINANCE USDT-M";
+    this.symbolSubtitleEl.textContent = ticker.name || "";
+    this.symbolSubtitleEl.style.display = ticker.name ? "inline" : "none";
+    this.contractBadgeEl.textContent =
+      ticker.contractType === "TRADIFI_PERPETUAL" ? "TRADIFI" : "PERP";
+    this.contractBadgeEl.className = "contract-badge perp";
+    this.volLabelEl.textContent = "24h Vol (USDT)";
 
     if (ticker.price > 0) {
       this.priceEl.textContent = formatPrice(ticker.price);
@@ -188,8 +176,7 @@ export class HeaderComponent {
     if (customLabel) {
       this.statusTextEl.textContent = customLabel;
     } else if (status === "connected") {
-      this.statusTextEl.textContent =
-        this.currentMarket === "tradifi_stocks" ? "Live Feed" : "Live Socket";
+      this.statusTextEl.textContent = "Live Socket";
     } else if (status === "connecting") {
       this.statusTextEl.textContent = "Connecting...";
     } else {

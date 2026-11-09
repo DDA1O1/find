@@ -17,43 +17,12 @@ export interface BinanceTicker24hr {
   count: number;
 }
 
-export type MarketMode = "crypto_futures" | "tradifi_stocks";
-
-export interface StockConsolidation {
-  weeks: number;
-  rangePercent: number;
-  lastWeekRange?: number;
-  prevWeekRange?: number;
-  volDryRatio?: number;
-  highestBody?: number;
-  lowestBody?: number;
-}
-
-export interface StockItem {
-  s: string; // Symbol
-  n: string; // Company / ETF Name
-  t: "STOCK" | "ETF"; // Type
-  p?: number; // Snapshot price
-  c?: number; // Snapshot 24h change %
-  v?: number; // Daily volume
-  cons?: {
-    w: number;
-    r: number;
-    lwr?: number;
-    pwr?: number;
-    vdr?: number;
-    h?: number;
-    l?: number;
-  };
-}
-
 export interface WatchlistTicker {
   symbol: string;
   baseAsset: string;
   quoteAsset: string;
   contractType?: string;
   name?: string;
-  market?: MarketMode;
   price: number;
   prevPrice?: number;
   change24h: number;
@@ -62,7 +31,6 @@ export interface WatchlistTicker {
   volume24h: number;
   quoteVolume24h: number;
   isFavorite: boolean;
-  consolidation?: StockConsolidation;
 }
 
 export interface CandleData {
