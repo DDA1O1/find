@@ -6,6 +6,7 @@ import { candleCache } from "./api/candleCache";
 import { WatchlistComponent } from "./components/watchlist";
 import { HeaderComponent } from "./components/header";
 import { ToolbarComponent } from "./components/toolbar";
+import { SearchModalComponent } from "./components/searchModal";
 
 class App {
   private activeSymbol: string;
@@ -20,6 +21,7 @@ class App {
   private header!: HeaderComponent;
   private toolbar!: ToolbarComponent;
   private watchlist!: WatchlistComponent;
+  private searchModal!: SearchModalComponent;
 
   private loadingOverlay = document.getElementById("chart-loading")!;
   private loadingText = document.getElementById("chart-loading-text")!;
@@ -66,10 +68,16 @@ class App {
       this.handleSymbolChange(newSymbol),
     );
 
-    // 5. Setup Keyboard Shortcuts (Spacebar, Arrows, / for Search)
+    // 5. Initialize Global Search Modal (TradingView-style)
+    this.searchModal = new SearchModalComponent((symbol) => {
+      this.handleSymbolChange(symbol);
+      this.watchlist.setActiveSymbol(symbol);
+    });
+
+    // 6. Setup Keyboard Shortcuts (Spacebar, Arrows, / for Search, letters open search modal)
     this.setupShortcuts();
 
-    // 6. Load initial data
+    // 7. Load initial data
     await this.loadInitialMarketData();
   }
 
@@ -79,12 +87,16 @@ class App {
 
   private setupShortcuts(): void {
     window.addEventListener("keydown", (e) => {
+      // Ignore when typing in an input or textarea (except Escape)
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         if (e.key === "Escape") {
           (e.target as HTMLElement).blur();
         }
         return;
       }
+
+      // If the search modal is open, let it handle everything
+      if (this.searchModal.opened) return;
 
       // Spacebar or ArrowDown: Advance to next coin and open chart
       if (e.code === "Space" || e.key === " " || e.key === "ArrowDown") {
@@ -104,10 +116,26 @@ class App {
         return;
       }
 
+      // "/" key: Open search modal (empty)
       if (e.key === "/") {
         e.preventDefault();
-        const searchInput = document.getElementById("wl-search") as HTMLInputElement | null;
-        searchInput?.focus();
+        this.searchModal.setTickers(this.allTickers);
+        this.searchModal.open();
+        return;
+      }
+
+      // Any single printable character (letter, digit): Open search modal with that character
+      if (
+        e.key.length === 1 &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        /[a-zA-Z0-9]/.test(e.key)
+      ) {
+        e.preventDefault();
+        this.searchModal.setTickers(this.allTickers);
+        this.searchModal.open(e.key.toUpperCase());
+        return;
       }
     });
   }
