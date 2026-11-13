@@ -1,19 +1,23 @@
 import "./style.css";
-import type { CandleData, Timeframe, WatchlistTicker } from "./types";
+import type { CandleData, Timeframe } from "./types";
 import { ChartManager } from "./chart/chartManager";
-import { AllTickersSocketClient, fetchFutures24hTickers, KlineSocketClient } from "./api/binance";
+import {
+  AllTickersSocketClient,
+  fetchFutures24hTickers,
+  KlineSocketClient,
+  RateLimitError,
+} from "./api/binance";
 import { candleCache } from "./api/candleCache";
 import { WatchlistComponent } from "./components/watchlist";
 import { HeaderComponent } from "./components/header";
 import { ToolbarComponent } from "./components/toolbar";
 import { SearchModalComponent } from "./components/searchModal";
+import { ToastComponent } from "./components/toast";
+import { OfflineBannerComponent } from "./components/offlineBanner";
+import { eventBus } from "./core/eventBus";
+import { stateManager } from "./core/stateManager";
 
-class App {
-  private activeSymbol: string;
-  private activeTimeframe: Timeframe;
-
-  private allTickers: Map<string, WatchlistTicker> = new Map();
-
+export class App {
   private chartManager!: ChartManager;
   private klineSocket: KlineSocketClient | null = null;
   private allTickersSocket: AllTickersSocketClient | null = null;
@@ -22,19 +26,27 @@ class App {
   private toolbar!: ToolbarComponent;
   private watchlist!: WatchlistComponent;
   private searchModal!: SearchModalComponent;
+  private toast!: ToastComponent;
+  private offlineBanner!: OfflineBannerComponent;
 
   private loadingOverlay = document.getElementById("chart-loading")!;
   private loadingText = document.getElementById("chart-loading-text")!;
   private watchlistAside = document.getElementById("app-watchlist")!;
 
-  constructor() {
-    this.activeSymbol = localStorage.getItem("tv_active_symbol") || "BTCUSDT";
-    this.activeTimeframe = (localStorage.getItem("tv_active_timeframe") as Timeframe) || "1d";
+  private catalogSyncInterval: number | null = null;
+  private unbindShortcuts?: () => void;
+  private eventBusUnsubs: Array<() => void> = [];
+  private isDestroyed = false;
 
+  constructor() {
     void this.init();
   }
 
   private async init(): Promise<void> {
+    // 0. Initialize Notifications & Offline Banner (A5, E1)
+    this.toast = new ToastComponent();
+    this.offlineBanner = new OfflineBannerComponent();
+
     // 1. Initialize Header
     const headerEl = document.getElementById("app-header")!;
     this.header = new HeaderComponent(
@@ -43,10 +55,10 @@ class App {
       () => this.chartManager.fitContent(),
     );
 
-    // 2. Initialize Chart Manager
+    // 2. Initialize Chart Manager (with C4 Worker & D3 Lazy indicators)
     const chartContainer = document.getElementById("chart-container")!;
     this.chartManager = new ChartManager(chartContainer, ({ candle, isHovered }) => {
-      this.toolbar.updateLegend(this.activeSymbol, candle, isHovered);
+      this.toolbar.updateLegend(stateManager.activeSymbol, candle, isHovered);
     });
 
     // 3. Initialize Toolbar
@@ -55,30 +67,74 @@ class App {
     this.toolbar = new ToolbarComponent(
       toolbarEl,
       legendEl,
-      this.activeTimeframe,
-      this.chartManager.getIndicators(),
-      (newTf) => this.handleTimeframeChange(newTf),
-      (newType) => this.chartManager.setChartType(newType),
-      (settings) => this.chartManager.setIndicators(settings),
+      stateManager.activeTimeframe,
+      stateManager.indicators,
+      (newTf) => stateManager.setActiveTimeframe(newTf),
+      (newType) => {
+        stateManager.setChartType(newType);
+        this.chartManager.setChartType(newType);
+      },
+      (settings) => {
+        stateManager.setIndicators(settings);
+        this.chartManager.setIndicators(settings);
+      },
     );
 
-    // 4. Initialize Binance Futures Watchlist
+    // 4. Initialize Binance Futures Watchlist (with C3 Virtual Scrolling & D1 Debounce)
     const watchlistEl = document.getElementById("app-watchlist")!;
-    this.watchlist = new WatchlistComponent(watchlistEl, this.activeSymbol, (newSymbol) =>
-      this.handleSymbolChange(newSymbol),
-    );
+    this.watchlist = new WatchlistComponent(watchlistEl, stateManager.activeSymbol, (newSymbol) => {
+      stateManager.setActiveSymbol(newSymbol);
+    });
 
     // 5. Initialize Global Search Modal (TradingView-style)
     this.searchModal = new SearchModalComponent((symbol) => {
-      this.handleSymbolChange(symbol);
+      stateManager.setActiveSymbol(symbol);
       this.watchlist.setActiveSymbol(symbol);
     });
 
-    // 6. Setup Keyboard Shortcuts (Spacebar, Arrows, / for Search, letters open search modal)
+    // 6. Connect EventBus Subscriptions (C1, C2)
+    this.setupEventBus();
+
+    // 7. Setup Keyboard Shortcuts
     this.setupShortcuts();
 
-    // 7. Load initial data
+    // 8. Load initial market data
     await this.loadInitialMarketData();
+  }
+
+  private setupEventBus(): void {
+    // Listen to central symbol changes
+    this.eventBusUnsubs.push(
+      eventBus.on("symbol:change", async ({ symbol }) => {
+        this.watchlist.setActiveSymbol(symbol);
+
+        const ticker = stateManager.allTickers.get(symbol);
+        if (ticker) {
+          this.header.setTicker(ticker);
+        }
+
+        this.startKlineSocket();
+        await this.loadCandles(symbol, stateManager.activeTimeframe);
+      }),
+    );
+
+    // Listen to timeframe changes
+    this.eventBusUnsubs.push(
+      eventBus.on("timeframe:change", async ({ timeframe }) => {
+        this.startKlineSocket();
+        await this.loadCandles(stateManager.activeSymbol, timeframe);
+      }),
+    );
+
+    // Reconnection on network online restore (E1)
+    this.eventBusUnsubs.push(
+      eventBus.on("connection:network", ({ isOnline }) => {
+        if (isOnline) {
+          this.reconnectSockets();
+          void this.loadCandles(stateManager.activeSymbol, stateManager.activeTimeframe);
+        }
+      }),
+    );
   }
 
   private toggleWatchlist(): void {
@@ -86,7 +142,7 @@ class App {
   }
 
   private setupShortcuts(): void {
-    window.addEventListener("keydown", (e) => {
+    const keydownHandler = (e: KeyboardEvent) => {
       // Ignore when typing in an input or textarea (except Escape)
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         if (e.key === "Escape") {
@@ -119,7 +175,7 @@ class App {
       // "/" key: Open search modal (empty)
       if (e.key === "/") {
         e.preventDefault();
-        this.searchModal.setTickers(this.allTickers);
+        this.searchModal.setTickers(stateManager.allTickers);
         this.searchModal.open();
         return;
       }
@@ -133,11 +189,14 @@ class App {
         /[a-zA-Z0-9]/.test(e.key)
       ) {
         e.preventDefault();
-        this.searchModal.setTickers(this.allTickers);
+        this.searchModal.setTickers(stateManager.allTickers);
         this.searchModal.open(e.key.toUpperCase());
         return;
       }
-    });
+    };
+
+    window.addEventListener("keydown", keydownHandler);
+    this.unbindShortcuts = () => window.removeEventListener("keydown", keydownHandler);
   }
 
   private async loadInitialMarketData(): Promise<void> {
@@ -145,24 +204,20 @@ class App {
       this.showLoading(`Loading Binance Futures pairs...`);
       const tickers = await fetchFutures24hTickers();
 
-      this.allTickers.clear();
-      for (const t of tickers) {
-        this.allTickers.set(t.symbol, t);
-      }
-
+      stateManager.setAllTickers(tickers);
       this.watchlist.setTickers(tickers);
-      this.watchlist.setActiveSymbol(this.activeSymbol);
+      this.watchlist.setActiveSymbol(stateManager.activeSymbol);
 
-      const currentTicker = this.allTickers.get(this.activeSymbol);
+      const currentTicker = stateManager.allTickers.get(stateManager.activeSymbol);
       if (currentTicker) {
         this.header.setTicker(currentTicker);
       }
 
-      // Start all tickers socket to stream real-time prices for watchlist
+      // Start all tickers socket to stream real-time prices for watchlist (D2 RAF batched)
       this.startAllTickersSocket();
 
       // Load initial candles
-      await this.loadCandles(this.activeSymbol, this.activeTimeframe);
+      await this.loadCandles(stateManager.activeSymbol, stateManager.activeTimeframe);
 
       // Start live kline socket
       this.startKlineSocket();
@@ -171,12 +226,18 @@ class App {
       this.startCatalogAutoSync();
     } catch (err) {
       console.error("Failed to load Binance Futures data:", err);
-      this.showLoading(`Connection error: ${(err as Error).message}. Retrying in 5s...`);
-      setTimeout(() => void this.loadInitialMarketData(), 5000);
+
+      let retryDelayMs = 5000;
+      if (err instanceof RateLimitError) {
+        retryDelayMs = err.retryAfterMs;
+      }
+
+      this.showLoading(
+        `Connection error: ${(err as Error).message}. Retrying in ${Math.round(retryDelayMs / 1000)}s...`,
+      );
+      setTimeout(() => void this.loadInitialMarketData(), retryDelayMs);
     }
   }
-
-  private catalogSyncInterval: number | null = null;
 
   private startCatalogAutoSync(): void {
     if (this.catalogSyncInterval) return;
@@ -187,21 +248,27 @@ class App {
         const { added, removed } = this.watchlist.syncTickers(freshTickers);
 
         for (const t of freshTickers) {
-          this.allTickers.set(t.symbol, t);
+          stateManager.allTickers.set(t.symbol, t);
         }
         for (const sym of removed) {
-          this.allTickers.delete(sym);
+          stateManager.allTickers.delete(sym);
         }
 
         if (added.length > 0) {
-          console.info(
-            `[Binance Catalog] Added ${added.length} new contract(s): ${added.join(", ")}`,
-          );
+          eventBus.emit("toast:show", {
+            type: "info",
+            title: "New Contracts Listed",
+            message: `${added.length} new contract(s): ${added.slice(0, 3).join(", ")}${added.length > 3 ? "..." : ""}`,
+            duration: 5000,
+          });
         }
         if (removed.length > 0) {
-          console.info(
-            `[Binance Catalog] Purged ${removed.length} delisted contract(s): ${removed.join(", ")}`,
-          );
+          eventBus.emit("toast:show", {
+            type: "warning",
+            title: "Contracts Delisted",
+            message: `Delisted: ${removed.slice(0, 3).join(", ")}`,
+            duration: 5000,
+          });
         }
       } catch (err) {
         console.warn("[Binance Catalog] Auto-sync failed:", err);
@@ -244,32 +311,41 @@ class App {
     } catch (err) {
       window.clearTimeout(spinnerTimer);
       console.error(`Failed to load candles for ${symbol}:`, err);
-      this.showLoading(`Error loading ${symbol} chart. Retrying...`);
-      setTimeout(() => void this.loadCandles(symbol, interval), 3000);
+
+      let retryDelayMs = 3000;
+      if (err instanceof RateLimitError) {
+        retryDelayMs = err.retryAfterMs;
+      }
+
+      this.showLoading(
+        `Error loading ${symbol} chart. Retrying in ${Math.round(retryDelayMs / 1000)}s...`,
+      );
+      setTimeout(() => void this.loadCandles(symbol, interval), retryDelayMs);
     }
   }
 
   private triggerPrefetch(): void {
     const nextSymbols = this.watchlist.getAdjacentSymbols(5);
-    void candleCache.prefetch(nextSymbols, this.activeTimeframe, 500);
+    void candleCache.prefetch(nextSymbols, stateManager.activeTimeframe, 500);
   }
 
   private startKlineSocket(): void {
     if (this.klineSocket) {
-      this.klineSocket.updateSubscription(this.activeSymbol, this.activeTimeframe);
+      this.klineSocket.updateSubscription(stateManager.activeSymbol, stateManager.activeTimeframe);
       return;
     }
 
     this.klineSocket = new KlineSocketClient(
-      this.activeSymbol,
-      this.activeTimeframe,
+      stateManager.activeSymbol,
+      stateManager.activeTimeframe,
       (candle: CandleData, isClosed: boolean) => {
         this.chartManager.updateCandle(candle, isClosed);
         this.header.updatePriceOnly(candle.close);
-        this.watchlist.updateSingleTickerPrice(this.activeSymbol, candle.close);
+        this.watchlist.updateSingleTickerPrice(stateManager.activeSymbol, candle.close);
       },
       (status) => {
         this.header.setStatus(status);
+        stateManager.setKlineStatus(status);
       },
     );
   }
@@ -278,41 +354,32 @@ class App {
     if (this.allTickersSocket) return;
 
     this.allTickersSocket = new AllTickersSocketClient((updates) => {
+      // D2: Batch price updates inside Watchlist Virtual Scroll
       this.watchlist.updateTickerPrices(updates);
+      stateManager.updateTickers(updates);
 
-      const activeUpdate = updates.get(this.activeSymbol);
+      const activeUpdate = updates.get(stateManager.activeSymbol);
       if (activeUpdate) {
-        const current = this.allTickers.get(this.activeSymbol);
+        const current = stateManager.allTickers.get(stateManager.activeSymbol);
         if (current) {
-          Object.assign(current, activeUpdate);
           this.header.setTicker(current);
         }
       }
     });
   }
 
-  private async handleSymbolChange(symbol: string): Promise<void> {
-    if (this.activeSymbol === symbol) return;
-    this.activeSymbol = symbol;
-    localStorage.setItem("tv_active_symbol", symbol);
-
-    const ticker = this.allTickers.get(symbol);
-    if (ticker) {
-      this.header.setTicker(ticker);
+  private reconnectSockets(): void {
+    if (this.isDestroyed) return;
+    if (this.klineSocket) {
+      this.klineSocket.destroy();
+      this.klineSocket = null;
     }
-
+    if (this.allTickersSocket) {
+      this.allTickersSocket.destroy();
+      this.allTickersSocket = null;
+    }
     this.startKlineSocket();
-    await this.loadCandles(this.activeSymbol, this.activeTimeframe);
-  }
-
-  private async handleTimeframeChange(tf: Timeframe): Promise<void> {
-    if (this.activeTimeframe === tf) return;
-
-    this.activeTimeframe = tf;
-    localStorage.setItem("tv_active_timeframe", tf);
-
-    this.startKlineSocket();
-    await this.loadCandles(this.activeSymbol, this.activeTimeframe);
+    this.startAllTickersSocket();
   }
 
   private showLoading(text: string): void {
@@ -325,9 +392,51 @@ class App {
     this.loadingOverlay.style.opacity = "0";
     this.loadingOverlay.style.display = "none";
   }
+
+  /**
+   * C5: Comprehensive teardown method for full application lifecycle
+   */
+  public destroy(): void {
+    this.isDestroyed = true;
+
+    if (this.catalogSyncInterval) {
+      clearInterval(this.catalogSyncInterval);
+      this.catalogSyncInterval = null;
+    }
+
+    if (this.unbindShortcuts) {
+      this.unbindShortcuts();
+      this.unbindShortcuts = undefined;
+    }
+
+    for (const unsub of this.eventBusUnsubs) {
+      unsub();
+    }
+    this.eventBusUnsubs = [];
+
+    if (this.klineSocket) {
+      this.klineSocket.destroy();
+      this.klineSocket = null;
+    }
+    if (this.allTickersSocket) {
+      this.allTickersSocket.destroy();
+      this.allTickersSocket = null;
+    }
+
+    this.chartManager?.destroy();
+    this.header?.destroy();
+    this.toolbar?.destroy();
+    this.watchlist?.destroy();
+    this.searchModal?.destroy();
+    this.offlineBanner?.destroy();
+    this.toast?.destroy();
+  }
 }
 
 // Bootstrap application on DOM ready
+let appInstance: App | null = null;
 window.addEventListener("DOMContentLoaded", () => {
-  new App();
+  appInstance = new App();
 });
+
+export { appInstance };

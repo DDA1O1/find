@@ -20,11 +20,21 @@ export class HeaderComponent {
   private statusDotEl!: HTMLElement;
   private statusTextEl!: HTMLElement;
   private fullscreenBtn!: HTMLButtonElement;
+  private fitBtn!: HTMLButtonElement;
+  private toggleSidebarBtn!: HTMLButtonElement;
+
+  private boundFitChart: () => void;
+  private boundToggleSidebar: () => void;
+  private boundToggleFullscreen: () => void;
 
   constructor(container: HTMLElement, onToggleSidebar: () => void, onFitChart: () => void) {
     this.container = container;
     this.onToggleSidebar = onToggleSidebar;
     this.onFitChart = onFitChart;
+
+    this.boundFitChart = () => this.onFitChart();
+    this.boundToggleSidebar = () => this.onToggleSidebar();
+    this.boundToggleFullscreen = () => this.toggleFullscreen();
 
     this.render();
   }
@@ -119,15 +129,22 @@ export class HeaderComponent {
     this.statusDotEl = this.container.querySelector("#hdr-status-dot")!;
     this.statusTextEl = this.container.querySelector("#hdr-status-text")!;
     this.fullscreenBtn = this.container.querySelector("#hdr-fullscreen")!;
+    this.fitBtn = this.container.querySelector<HTMLButtonElement>("#hdr-fit")!;
+    this.toggleSidebarBtn = this.container.querySelector<HTMLButtonElement>("#hdr-toggle-sidebar")!;
 
-    const fitBtn = this.container.querySelector<HTMLButtonElement>("#hdr-fit")!;
-    fitBtn.addEventListener("click", () => this.onFitChart());
+    this.fitBtn.addEventListener("click", this.boundFitChart);
+    this.toggleSidebarBtn.addEventListener("click", this.boundToggleSidebar);
+    this.fullscreenBtn.addEventListener("click", this.boundToggleFullscreen);
+  }
 
-    const toggleSidebarBtn =
-      this.container.querySelector<HTMLButtonElement>("#hdr-toggle-sidebar")!;
-    toggleSidebarBtn.addEventListener("click", () => this.onToggleSidebar());
-
-    this.fullscreenBtn.addEventListener("click", () => this.toggleFullscreen());
+  public destroy(): void {
+    if (this.fitBtn) this.fitBtn.removeEventListener("click", this.boundFitChart);
+    if (this.toggleSidebarBtn) {
+      this.toggleSidebarBtn.removeEventListener("click", this.boundToggleSidebar);
+    }
+    if (this.fullscreenBtn) {
+      this.fullscreenBtn.removeEventListener("click", this.boundToggleFullscreen);
+    }
   }
 
   public setTicker(ticker: WatchlistTicker): void {

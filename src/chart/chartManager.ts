@@ -12,7 +12,7 @@ import {
   type MouseEventParams,
 } from "lightweight-charts";
 import type { CandleData, IndicatorSettings } from "../types";
-import { calculateBollingerBands, calculateEMA, calculateSMA } from "../indicators/ma";
+import { IndicatorService, type IndicatorCalculationResults } from "./indicatorService";
 
 export type ChartType = "candles" | "line" | "area";
 
@@ -24,13 +24,16 @@ export class ChartManager {
   private areaSeries: ISeriesApi<"Area"> | null = null;
   private volumeSeries: ISeriesApi<"Histogram">;
 
-  // Indicators
+  // D3: Lazy-loaded indicator series (only instantiated when enabled)
   private ema20Series: ISeriesApi<"Line"> | null = null;
   private ema50Series: ISeriesApi<"Line"> | null = null;
   private sma200Series: ISeriesApi<"Line"> | null = null;
   private bbUpperSeries: ISeriesApi<"Line"> | null = null;
   private bbMiddleSeries: ISeriesApi<"Line"> | null = null;
   private bbLowerSeries: ISeriesApi<"Line"> | null = null;
+
+  // C4: Web Worker indicator calculation service
+  private indicatorService: IndicatorService;
 
   private currentChartType: ChartType = "candles";
   private candles: CandleData[] = [];
@@ -46,6 +49,8 @@ export class ChartManager {
   private onLegendUpdate?: (data: { candle: CandleData | null; isHovered: boolean }) => void;
   private isHovering = false;
   private hoveredCandle: CandleData | null = null;
+  private crosshairUnsub?: () => void;
+  private mouseLeaveListener?: () => void;
 
   constructor(
     container: HTMLElement,
@@ -138,9 +143,13 @@ export class ChartManager {
       },
     });
 
+    // Initialize C4: Worker indicator service
+    this.indicatorService = new IndicatorService((results) => {
+      this.applyIndicatorResults(results);
+    });
+
     this.setupResizeHandler();
     this.setupCrosshairHandler();
-    this.createIndicatorSeries();
   }
 
   private setupResizeHandler(): void {
@@ -153,7 +162,7 @@ export class ChartManager {
   }
 
   private setupCrosshairHandler(): void {
-    this.chart.subscribeCrosshairMove((param: MouseEventParams) => {
+    const handler = (param: MouseEventParams) => {
       if (!this.onLegendUpdate) return;
 
       if (
@@ -197,16 +206,20 @@ export class ChartManager {
         this.hoveredCandle = candle;
         this.onLegendUpdate({ candle, isHovered: true });
       }
-    });
+    };
 
-    this.container.addEventListener("mouseleave", () => {
+    this.chart.subscribeCrosshairMove(handler);
+    this.crosshairUnsub = () => this.chart.unsubscribeCrosshairMove(handler);
+
+    this.mouseLeaveListener = () => {
       this.isHovering = false;
       this.hoveredCandle = null;
       if (this.onLegendUpdate) {
         const lastCandle = this.candles.length > 0 ? this.candles[this.candles.length - 1] : null;
         this.onLegendUpdate({ candle: lastCandle, isHovered: false });
       }
-    });
+    };
+    this.container.addEventListener("mouseleave", this.mouseLeaveListener);
   }
 
   private _candlesMapCache: Map<number, CandleData> | null = null;
@@ -220,58 +233,88 @@ export class ChartManager {
     return this._candlesMapCache;
   }
 
-  private createIndicatorSeries(): void {
-    // EMA 20 (Electric Blue)
-    this.ema20Series = this.chart.addSeries(LineSeries, {
-      color: "#3b82f6",
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
+  /* ======================================================================== *
+   *  D3: Lazy-Load Indicator Series Creation
+   * ======================================================================== */
 
-    // EMA 50 (Vibrant Amber)
-    this.ema50Series = this.chart.addSeries(LineSeries, {
-      color: "#f59e0b",
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
+  private getOrCreateEma20(): ISeriesApi<"Line"> {
+    if (!this.ema20Series) {
+      this.ema20Series = this.chart.addSeries(LineSeries, {
+        color: "#3b82f6",
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+    }
+    return this.ema20Series;
+  }
 
-    // SMA 200 (Purple)
-    this.sma200Series = this.chart.addSeries(LineSeries, {
-      color: "#a855f7",
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
+  private getOrCreateEma50(): ISeriesApi<"Line"> {
+    if (!this.ema50Series) {
+      this.ema50Series = this.chart.addSeries(LineSeries, {
+        color: "#f59e0b",
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+    }
+    return this.ema50Series;
+  }
 
-    // Bollinger Bands (Cyan)
-    this.bbUpperSeries = this.chart.addSeries(LineSeries, {
-      color: "rgba(6, 182, 212, 0.75)",
-      lineWidth: 1,
-      lineStyle: 2, // dashed
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
-    this.bbMiddleSeries = this.chart.addSeries(LineSeries, {
-      color: "rgba(6, 182, 212, 0.4)",
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
-    this.bbLowerSeries = this.chart.addSeries(LineSeries, {
-      color: "rgba(6, 182, 212, 0.75)",
-      lineWidth: 1,
-      lineStyle: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
+  private getOrCreateSma200(): ISeriesApi<"Line"> {
+    if (!this.sma200Series) {
+      this.sma200Series = this.chart.addSeries(LineSeries, {
+        color: "#a855f7",
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+    }
+    return this.sma200Series;
+  }
+
+  private getOrCreateBollingerBands(): {
+    upper: ISeriesApi<"Line">;
+    middle: ISeriesApi<"Line">;
+    lower: ISeriesApi<"Line">;
+  } {
+    if (!this.bbUpperSeries) {
+      this.bbUpperSeries = this.chart.addSeries(LineSeries, {
+        color: "rgba(6, 182, 212, 0.75)",
+        lineWidth: 1,
+        lineStyle: 2, // dashed
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+    }
+    if (!this.bbMiddleSeries) {
+      this.bbMiddleSeries = this.chart.addSeries(LineSeries, {
+        color: "rgba(6, 182, 212, 0.4)",
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+    }
+    if (!this.bbLowerSeries) {
+      this.bbLowerSeries = this.chart.addSeries(LineSeries, {
+        color: "rgba(6, 182, 212, 0.75)",
+        lineWidth: 1,
+        lineStyle: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+    }
+    return {
+      upper: this.bbUpperSeries,
+      middle: this.bbMiddleSeries,
+      lower: this.bbLowerSeries,
+    };
   }
 
   /**
@@ -421,58 +464,62 @@ export class ChartManager {
     }
   }
 
+  /**
+   * Dispatches calculation to Web Worker (C4)
+   */
   public recalculateIndicators(): void {
     if (this.candles.length === 0) return;
+    this.indicatorService.calculate(this.candles, this.indicatorSettings);
+  }
 
+  /**
+   * Receives results from Web Worker or sync calculation (C4)
+   */
+  private applyIndicatorResults(results: IndicatorCalculationResults): void {
     // EMA 20
-    if (this.indicatorSettings.ema20 && this.ema20Series) {
-      const ema20 = calculateEMA(this.candles, 20);
-      this.ema20Series.setData(
-        ema20.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+    if (this.indicatorSettings.ema20 && results.ema20) {
+      this.getOrCreateEma20().setData(
+        results.ema20.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
       );
     } else if (this.ema20Series) {
       this.ema20Series.setData([]);
     }
 
     // EMA 50
-    if (this.indicatorSettings.ema50 && this.ema50Series) {
-      const ema50 = calculateEMA(this.candles, 50);
-      this.ema50Series.setData(
-        ema50.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+    if (this.indicatorSettings.ema50 && results.ema50) {
+      this.getOrCreateEma50().setData(
+        results.ema50.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
       );
     } else if (this.ema50Series) {
       this.ema50Series.setData([]);
     }
 
     // SMA 200
-    if (this.indicatorSettings.sma200 && this.sma200Series) {
-      const sma200 = calculateSMA(this.candles, 200);
-      this.sma200Series.setData(
-        sma200.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+    if (this.indicatorSettings.sma200 && results.sma200) {
+      this.getOrCreateSma200().setData(
+        results.sma200.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
       );
     } else if (this.sma200Series) {
       this.sma200Series.setData([]);
     }
 
     // Bollinger Bands
-    if (
-      this.indicatorSettings.bollingerBands &&
-      this.bbUpperSeries &&
-      this.bbMiddleSeries &&
-      this.bbLowerSeries
-    ) {
-      const bb = calculateBollingerBands(this.candles, 20, 2);
-      this.bbUpperSeries.setData(
-        bb.upper.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+    if (this.indicatorSettings.bollingerBands && results.bollingerBands) {
+      const bb = this.getOrCreateBollingerBands();
+      bb.upper.setData(
+        results.bollingerBands.upper.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
       );
-      this.bbMiddleSeries.setData(
-        bb.middle.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+      bb.middle.setData(
+        results.bollingerBands.middle.map((p) => ({
+          time: p.time as UTCTimestamp,
+          value: p.value,
+        })),
       );
-      this.bbLowerSeries.setData(
-        bb.lower.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+      bb.lower.setData(
+        results.bollingerBands.lower.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
       );
-    } else {
-      this.bbUpperSeries?.setData([]);
+    } else if (this.bbUpperSeries) {
+      this.bbUpperSeries.setData([]);
       this.bbMiddleSeries?.setData([]);
       this.bbLowerSeries?.setData([]);
     }
@@ -547,10 +594,23 @@ export class ChartManager {
     this.chart.timeScale().fitContent();
   }
 
+  /**
+   * C5: Comprehensive teardown method
+   */
   public destroy(): void {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
+      this.resizeObserver = null;
     }
+    if (this.crosshairUnsub) {
+      this.crosshairUnsub();
+      this.crosshairUnsub = undefined;
+    }
+    if (this.mouseLeaveListener) {
+      this.container.removeEventListener("mouseleave", this.mouseLeaveListener);
+      this.mouseLeaveListener = undefined;
+    }
+    this.indicatorService.destroy();
     this.chart.remove();
   }
 }

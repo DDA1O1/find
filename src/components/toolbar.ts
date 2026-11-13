@@ -27,6 +27,7 @@ export class ToolbarComponent {
   private onIndicatorChange: (settings: Partial<IndicatorSettings>) => void;
 
   private indicatorsDropdownOpen = false;
+  private documentClickListener?: (e: MouseEvent) => void;
 
   constructor(
     container: HTMLElement,
@@ -171,12 +172,13 @@ export class ToolbarComponent {
       dropdown.style.display = this.indicatorsDropdownOpen ? "block" : "none";
     });
 
-    document.addEventListener("click", (e) => {
+    this.documentClickListener = (e: MouseEvent) => {
       if (!this.container.contains(e.target as Node)) {
         this.indicatorsDropdownOpen = false;
         dropdown.style.display = "none";
       }
-    });
+    };
+    document.addEventListener("click", this.documentClickListener);
 
     // Indicators Checkboxes
     const bindCheckbox = (id: string, key: keyof IndicatorSettings) => {
@@ -234,5 +236,14 @@ export class ToolbarComponent {
         <span class="leg-item"><span class="leg-lbl">Vol</span> <span>${candle.volume.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span></span>
       </div>
     `;
+  }
+
+  public destroy(): void {
+    if (this.documentClickListener) {
+      document.removeEventListener("click", this.documentClickListener);
+      this.documentClickListener = undefined;
+    }
+    this.container.innerHTML = "";
+    this.legendContainer.innerHTML = "";
   }
 }

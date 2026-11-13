@@ -11,9 +11,65 @@ import {
   isTradFiFuturesSymbol,
   registerTradFiPerpetualSymbol,
 } from "./tradifiPairs";
+import { ReconnectingWebSocket } from "./reconnectingWebSocket";
+import { eventBus, type ConnectionStatus } from "../core/eventBus";
 
 const REST_BASE = "https://fapi.binance.com";
 const WS_BASE = "wss://fstream.binance.com/market";
+
+export class RateLimitError extends Error {
+  public retryAfterMs: number;
+  constructor(message: string, retryAfterMs = 30000) {
+    super(message);
+    this.name = "RateLimitError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+// Track rate limit timestamp to protect against IP bans (E2)
+let rateLimitedUntil = 0;
+
+export function getRateLimitStatus(): { isRateLimited: boolean; remainingSec: number } {
+  const now = Date.now();
+  if (now < rateLimitedUntil) {
+    return { isRateLimited: true, remainingSec: Math.ceil((rateLimitedUntil - now) / 1000) };
+  }
+  return { isRateLimited: false, remainingSec: 0 };
+}
+
+/**
+ * Safe fetch wrapper that handles HTTP 429 / 418 rate limiting gracefully (E2)
+ */
+async function fetchWithRateLimit(url: string, init?: RequestInit): Promise<Response> {
+  const limitStatus = getRateLimitStatus();
+  if (limitStatus.isRateLimited) {
+    throw new RateLimitError(
+      `Binance API rate limit active. Please wait ${limitStatus.remainingSec}s`,
+      limitStatus.remainingSec * 1000,
+    );
+  }
+
+  const res = await fetch(url, init);
+
+  if (res.status === 429 || res.status === 418) {
+    // Check Retry-After header (seconds)
+    const retryAfterHeader = res.headers.get("Retry-After");
+    const retrySec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 30;
+    const cooldownMs = (isNaN(retrySec) ? 30 : retrySec) * 1000;
+    rateLimitedUntil = Date.now() + cooldownMs;
+
+    eventBus.emit("toast:show", {
+      type: "warning",
+      title: "Rate Limit Exceeded",
+      message: `Binance rate limit triggered. Pausing API requests for ${Math.round(cooldownMs / 1000)}s.`,
+      duration: 8000,
+    });
+
+    throw new RateLimitError(`Binance API rate limit exceeded (HTTP ${res.status}).`, cooldownMs);
+  }
+
+  return res;
+}
 
 interface ExchangeSymbolInfo {
   symbol: string;
@@ -24,13 +80,11 @@ interface ExchangeSymbolInfo {
 
 /**
  * Fetches 24h ticker data for all active Binance USDT-M Futures pairs.
- * Cross-references with exchangeInfo to automatically filter out settled/delisted
- * contracts and include newly trading perpetuals.
  */
 export async function fetchFutures24hTickers(): Promise<WatchlistTicker[]> {
   const [infoRes, tickerRes] = await Promise.all([
-    fetch(`${REST_BASE}/fapi/v1/exchangeInfo`).catch(() => null),
-    fetch(`${REST_BASE}/fapi/v1/ticker/24hr`),
+    fetchWithRateLimit(`${REST_BASE}/fapi/v1/exchangeInfo`).catch(() => null),
+    fetchWithRateLimit(`${REST_BASE}/fapi/v1/ticker/24hr`),
   ]);
 
   if (!tickerRes.ok) {
@@ -106,7 +160,7 @@ export async function fetchKlines(
   limit = 1000,
 ): Promise<CandleData[]> {
   const url = `${REST_BASE}/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-  const res = await fetch(url);
+  const res = await fetchWithRateLimit(url);
   if (!res.ok) {
     throw new Error(`Failed to fetch klines for ${symbol}: HTTP ${res.status}`);
   }
@@ -129,6 +183,9 @@ const FAVORITES_STORAGE_KEY = "tv_favorites_v1";
 
 export function getSavedFavorites(): Set<string> {
   try {
+    if (typeof localStorage === "undefined") {
+      return new Set(["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"]);
+    }
     const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
     if (!raw) return new Set(["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"]);
     return new Set(JSON.parse(raw));
@@ -139,7 +196,9 @@ export function getSavedFavorites(): Set<string> {
 
 export function saveFavorites(favorites: Set<string>): void {
   try {
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(Array.from(favorites)));
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(Array.from(favorites)));
+    }
   } catch (e) {
     console.error("Failed to save favorites to localStorage", e);
   }
@@ -147,21 +206,21 @@ export function saveFavorites(favorites: Set<string>): void {
 
 /**
  * WebSocket client for real-time Kline / Candlestick stream of active symbol
+ * Built on ReconnectingWebSocket (C6, C5)
  */
 export class KlineSocketClient {
-  private ws: WebSocket | null = null;
+  private rws: ReconnectingWebSocket | null = null;
   private symbol: string;
   private interval: Timeframe;
   private onCandleUpdate: (candle: CandleData, isClosed: boolean) => void;
-  private onStatusChange: (status: "connecting" | "connected" | "disconnected") => void;
-  private reconnectTimeout: number | null = null;
+  private onStatusChange: (status: ConnectionStatus) => void;
   private isDestroyed = false;
 
   constructor(
     symbol: string,
     interval: Timeframe,
     onCandleUpdate: (candle: CandleData, isClosed: boolean) => void,
-    onStatusChange: (status: "connecting" | "connected" | "disconnected") => void,
+    onStatusChange: (status: ConnectionStatus) => void,
   ) {
     this.symbol = symbol;
     this.interval = interval;
@@ -174,28 +233,29 @@ export class KlineSocketClient {
     if (this.symbol === symbol && this.interval === interval) return;
     this.symbol = symbol;
     this.interval = interval;
-    this.reconnect();
+    this.rws?.updateUrl(this.getStreamUrl());
+  }
+
+  private getStreamUrl(): string {
+    const streamName = `${this.symbol.toLowerCase()}@kline_${this.interval}`;
+    return `${WS_BASE}/ws/${streamName}`;
   }
 
   private connect(): void {
     if (this.isDestroyed) return;
 
-    this.onStatusChange("connecting");
-    const streamName = `${this.symbol.toLowerCase()}@kline_${this.interval}`;
-    const wsUrl = `${WS_BASE}/ws/${streamName}`;
-
-    try {
-      this.ws = new WebSocket(wsUrl);
-
-      this.ws.onopen = () => {
-        if (this.isDestroyed) {
-          this.ws?.close();
-          return;
+    this.rws = new ReconnectingWebSocket({
+      url: () => this.getStreamUrl(),
+      initialReconnectInterval: 1200,
+      maxReconnectInterval: 8000,
+      staleTimeout: 15000, // 15 seconds stale check (E3)
+      onStatusChange: (status) => {
+        if (!this.isDestroyed) {
+          this.onStatusChange(status);
         }
-        this.onStatusChange("connected");
-      };
-
-      this.ws.onmessage = (event) => {
+      },
+      onMessage: (event) => {
+        if (this.isDestroyed) return;
         try {
           const msg: WsKlineMessage = JSON.parse(event.data);
           if (msg.e === "kline" && msg.k) {
@@ -213,69 +273,30 @@ export class KlineSocketClient {
         } catch (err) {
           console.error("Error parsing kline ws message:", err);
         }
-      };
-
-      this.ws.onerror = (e) => {
-        console.warn("Kline WebSocket error:", e);
-      };
-
-      this.ws.onclose = () => {
-        this.onStatusChange("disconnected");
-        if (!this.isDestroyed) {
-          this.scheduleReconnect();
-        }
-      };
-    } catch (e) {
-      console.error("Failed to create WebSocket:", e);
-      this.onStatusChange("disconnected");
-      this.scheduleReconnect();
-    }
-  }
-
-  private scheduleReconnect(): void {
-    if (this.reconnectTimeout || this.isDestroyed) return;
-    this.reconnectTimeout = window.setTimeout(() => {
-      this.reconnectTimeout = null;
-      this.connect();
-    }, 2500);
-  }
-
-  private reconnect(): void {
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-    if (this.ws) {
-      this.ws.onclose = null;
-      this.ws.close();
-      this.ws = null;
-    }
-    this.connect();
+      },
+    });
   }
 
   public destroy(): void {
     this.isDestroyed = true;
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-    }
-    if (this.ws) {
-      this.ws.onclose = null;
-      this.ws.close();
-      this.ws = null;
+    if (this.rws) {
+      this.rws.destroy();
+      this.rws = null;
     }
   }
 }
 
 /**
  * WebSocket client for all-market ticker stream to keep watchlist updated in real-time
+ * Built on ReconnectingWebSocket (C6, C5, E3) with exponential backoff REST fallback
  */
 export class AllTickersSocketClient {
-  private ws: WebSocket | null = null;
+  private rws: ReconnectingWebSocket | null = null;
   private onTickersUpdate: (updates: Map<string, Partial<WatchlistTicker>>) => void;
-  private reconnectTimeout: number | null = null;
   private watchdogInterval: number | null = null;
   private lastMessageTime = 0;
   private isDestroyed = false;
+  private isRestFallbackRunning = false;
 
   constructor(onTickersUpdate: (updates: Map<string, Partial<WatchlistTicker>>) => void) {
     this.onTickersUpdate = onTickersUpdate;
@@ -283,11 +304,18 @@ export class AllTickersSocketClient {
     this.startWatchdog();
   }
 
+  /**
+   * E3: Tuned Watchdog: checks every 4s, but only triggers REST fallback
+   * after 12s of total socket silence.
+   */
   private startWatchdog(): void {
     this.watchdogInterval = window.setInterval(async () => {
-      if (this.isDestroyed) return;
-      // If we haven't received a live WS message in the last 4 seconds, poll REST as backup
-      if (Date.now() - this.lastMessageTime > 4000) {
+      if (this.isDestroyed || this.isRestFallbackRunning) return;
+
+      const idleMs = Date.now() - this.lastMessageTime;
+      // If we haven't received a live WS message in 12 seconds, poll REST as backup
+      if (idleMs > 12000 && this.lastMessageTime > 0) {
+        this.isRestFallbackRunning = true;
         try {
           const fresh = await fetchFutures24hTickers();
           const updatesMap = new Map<string, Partial<WatchlistTicker>>();
@@ -306,22 +334,26 @@ export class AllTickersSocketClient {
           }
         } catch {
           // Ignore background polling errors
+        } finally {
+          this.isRestFallbackRunning = false;
         }
       }
-    }, 3000);
+    }, 4000);
   }
 
   private connect(): void {
     if (this.isDestroyed) return;
 
-    try {
-      this.ws = new WebSocket(`${WS_BASE}/ws/!ticker@arr`);
-
-      this.ws.onopen = () => {
-        // Connected to all tickers stream
-      };
-
-      this.ws.onmessage = (event) => {
+    this.rws = new ReconnectingWebSocket({
+      url: `${WS_BASE}/ws/!ticker@arr`,
+      initialReconnectInterval: 1500,
+      maxReconnectInterval: 10000,
+      staleTimeout: 15000,
+      onOpen: () => {
+        this.lastMessageTime = Date.now();
+      },
+      onMessage: (event) => {
+        if (this.isDestroyed) return;
         this.lastMessageTime = Date.now();
         try {
           const rawList: WsTickerMessage[] = JSON.parse(event.data);
@@ -346,42 +378,19 @@ export class AllTickersSocketClient {
         } catch (err) {
           console.error("Error parsing all tickers ws message:", err);
         }
-      };
-
-      this.ws.onerror = () => {
-        // Handled in onclose
-      };
-
-      this.ws.onclose = () => {
-        if (!this.isDestroyed) {
-          this.scheduleReconnect();
-        }
-      };
-    } catch {
-      this.scheduleReconnect();
-    }
-  }
-
-  private scheduleReconnect(): void {
-    if (this.reconnectTimeout || this.isDestroyed) return;
-    this.reconnectTimeout = window.setTimeout(() => {
-      this.reconnectTimeout = null;
-      this.connect();
-    }, 4000);
+      },
+    });
   }
 
   public destroy(): void {
     this.isDestroyed = true;
     if (this.watchdogInterval) {
       clearInterval(this.watchdogInterval);
+      this.watchdogInterval = null;
     }
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-    }
-    if (this.ws) {
-      this.ws.onclose = null;
-      this.ws.close();
-      this.ws = null;
+    if (this.rws) {
+      this.rws.destroy();
+      this.rws = null;
     }
   }
 }

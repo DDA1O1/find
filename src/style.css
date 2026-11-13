@@ -837,11 +837,31 @@ span.neg {
   box-shadow: 0 2px 8px var(--color-accent-glow);
 }
 
-/* Watchlist Rows */
+/* Watchlist Rows (C3: Virtual Scrolling) */
 .watchlist-list {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  position: relative;
+}
+
+.wl-scroll-spacer {
+  width: 100%;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.wl-items-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  will-change: transform;
+}
+
+.bottom-sheet-drag-handle {
+  display: none;
 }
 
 .wl-loading,
@@ -1071,7 +1091,9 @@ span.neg {
   border-radius: 10px;
   padding: 0 14px;
   height: 44px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .search-modal-input-wrap:focus-within {
@@ -1320,7 +1342,167 @@ span.neg {
 }
 
 /* ==========================================================================
-   Responsive Breakpoints
+   Toast Notification System (A5)
+   ========================================================================== */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 10px;
+  max-width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast-item {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(13, 17, 26, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-hover);
+  border-radius: 12px;
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  transform: translateY(16px) scale(0.96);
+  opacity: 0;
+  transition:
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.toast-item.toast-enter {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.toast-item.toast-exit {
+  transform: translateY(-8px) scale(0.96);
+  opacity: 0;
+}
+
+.toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.toast-info .toast-icon {
+  color: var(--color-accent);
+}
+
+.toast-success .toast-icon {
+  color: var(--color-up);
+}
+
+.toast-warning .toast-icon {
+  color: #f59e0b;
+}
+
+.toast-error .toast-icon {
+  color: var(--color-down);
+}
+
+.toast-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toast-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.3;
+}
+
+.toast-message {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.toast-close {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.toast-close:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ==========================================================================
+   Network Offline Banner (E1)
+   ========================================================================== */
+.network-offline-banner {
+  width: 100%;
+  background: linear-gradient(90deg, #dc2626 0%, #b91c1c 100%);
+  color: #ffffff;
+  padding: 8px 16px;
+  z-index: 999;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: slideDownBanner 0.25s ease-out;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes slideDownBanner {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.offline-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.offline-retry-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+  padding: 2px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.offline-retry-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* ==========================================================================
+   Responsive Breakpoints & A7: Mobile Bottom Sheet
    ========================================================================== */
 @media (max-width: 900px) {
   .stats-row {
@@ -1341,11 +1523,55 @@ span.neg {
   .chart-type-group {
     display: none;
   }
+
+  /* A7: Mobile Bottom Sheet for Watchlist */
+  .bottom-sheet-drag-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 0 6px;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .drag-bar {
+    width: 36px;
+    height: 4px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.25);
+    transition: background 0.15s;
+  }
+
+  .drag-bar:active {
+    background: var(--color-accent);
+  }
+
   .app-watchlist {
-    position: absolute;
-    right: 0;
-    top: var(--header-height);
+    position: fixed;
     bottom: 0;
-    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.6);
+    left: 0;
+    right: 0;
+    top: auto;
+    width: 100%;
+    max-height: 75vh;
+    border-radius: 20px 20px 0 0;
+    border-left: none;
+    border-top: 1px solid var(--border-hover);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.75);
+    transform: translateY(0);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 100;
+  }
+
+  .app-watchlist.collapsed {
+    transform: translateY(100%);
+    margin-right: 0;
+  }
+
+  .toast-container {
+    bottom: 80px;
+    right: 16px;
+    left: 16px;
+    max-width: 100%;
   }
 }

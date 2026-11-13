@@ -255,7 +255,9 @@ export class SearchModalComponent {
       const changeClass = isPos ? "pos" : "neg";
 
       const baseHighlighted = this.highlightMatch(ticker.baseAsset, queryForHighlight);
-      const nameStr = ticker.name ? `<span class="search-result-name">${this.highlightMatch(ticker.name, queryForHighlight)}</span>` : "";
+      const nameStr = ticker.name
+        ? `<span class="search-result-name">${this.highlightMatch(ticker.name, queryForHighlight)}</span>`
+        : "";
 
       let tagHtml = "";
       if (ticker.contractType === "TRADIFI_PERPETUAL") {
@@ -353,5 +355,13 @@ export class SearchModalComponent {
   private selectSymbol(symbol: string): void {
     this.close();
     this.onSelect(symbol);
+  }
+
+  public destroy(): void {
+    if (this.overlay && this.overlay.parentNode) {
+      this.overlay.parentNode.removeChild(this.overlay);
+    }
+    this.tickers.clear();
+    this.filteredSymbols = [];
   }
 }
