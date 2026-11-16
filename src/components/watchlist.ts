@@ -370,7 +370,9 @@ export class WatchlistComponent {
       const tagHtml =
         ticker.contractType === "TRADIFI_PERPETUAL"
           ? `<span class="wl-tradifi-tag">TRADIFI</span>${ticker.industry ? `<span class="wl-industry-tag">; ${ticker.industry}</span>` : ""}`
-          : "";
+          : ticker.industry
+            ? `<span class="wl-industry-tag crypto-tag">${ticker.industry}</span>`
+            : "";
 
       const volSubtitle = ticker.name
         ? `${ticker.name} • ${formatVolume(ticker.quoteVolume24h)}`
@@ -647,20 +649,21 @@ export class WatchlistComponent {
     this.ensureSymbolVisible(this.activeSymbol);
   }
 
-  private toggleFavorite(symbol: string): void {
-    const ticker = this.tickers.get(symbol);
-    if (!ticker) return;
+  public toggleFavorite(symbol?: string): boolean | null {
+    const targetSymbol = symbol || this.activeSymbol;
+    const ticker = this.tickers.get(targetSymbol);
+    if (!ticker) return null;
 
     ticker.isFavorite = !ticker.isFavorite;
 
     if (ticker.isFavorite) {
-      this.favorites.add(symbol);
+      this.favorites.add(targetSymbol);
     } else {
-      this.favorites.delete(symbol);
+      this.favorites.delete(targetSymbol);
     }
     saveFavorites(this.favorites);
 
-    const refs = this.renderedRows.get(symbol);
+    const refs = this.renderedRows.get(targetSymbol);
     if (refs) {
       refs.starEl.classList.toggle("favorited", ticker.isFavorite);
     }
@@ -668,6 +671,8 @@ export class WatchlistComponent {
     if (this.currentFilter === "favorites") {
       this.updateView();
     }
+
+    return ticker.isFavorite;
   }
 
   public selectNextSymbol(): void {

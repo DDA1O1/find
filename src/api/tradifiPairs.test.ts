@@ -42,15 +42,36 @@ describe("TradFi Pairs & Chart Splicing", () => {
   it("retrieves official stock company names", () => {
     expect(getTradFiStockName("NVDA")).toBe("NVIDIA Corporation");
     expect(getTradFiStockName("TSLA")).toBe("Tesla, Inc.");
+    expect(getTradFiStockName("XAU")).toBe("Gold (Spot / Perpetual)");
+    expect(getTradFiStockName("CL")).toBe("Crude Oil (WTI)");
+    expect(getTradFiStockName("MW")).toBe("Leverage 2x Micron ETF");
+    expect(getTradFiStockName("NVDL")).toBe("Leverage 2x NVIDIA ETF");
     expect(getTradFiStockName("UNKNOWN")).toBeUndefined();
   });
 
-  it("retrieves industry labels for TradiFi stocks", () => {
+  it("retrieves industry labels for TradiFi stocks, commodities, and leveraged ETFs", () => {
     expect(getTradFiIndustry("NVDA")).toBe("SEMI");
+    expect(getTradFiIndustry("MU")).toBe("SEMI");
     expect(getTradFiIndustry("TSLA")).toBe("EV");
     expect(getTradFiIndustry("AAPL")).toBe("TECH");
     expect(getTradFiIndustry("COIN")).toBe("CRYPTO");
     expect(getTradFiIndustry("SPY")).toBe("ETF");
+    // Metals
+    expect(getTradFiIndustry("XAU")).toBe("METALS");
+    expect(getTradFiIndustry("PAXG")).toBe("METALS");
+    expect(getTradFiIndustry("XAG")).toBe("METALS");
+    expect(getTradFiIndustry("COPPER")).toBe("METALS");
+    // Petroleum
+    expect(getTradFiIndustry("CL")).toBe("PETROLEUM");
+    expect(getTradFiIndustry("NATGAS")).toBe("PETROLEUM");
+    expect(getTradFiIndustry("XOM")).toBe("PETROLEUM");
+    // Leveraged ETFs
+    expect(getTradFiIndustry("MW")).toBe("2X ETF");
+    expect(getTradFiIndustry("MUU")).toBe("2X ETF");
+    expect(getTradFiIndustry("NVDL")).toBe("2X ETF");
+    expect(getTradFiIndustry("TSLL")).toBe("2X ETF");
+    expect(getTradFiIndustry("TQQQ")).toBe("3X ETF");
+    expect(getTradFiIndustry("SQQQ")).toBe("3X INVERSE");
     expect(getTradFiIndustry("UNKNOWN")).toBeUndefined();
   });
 

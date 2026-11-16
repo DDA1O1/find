@@ -198,6 +198,20 @@ export class App {
         return;
       }
 
+      // ArrowRight: Star / toggle active script into Starred section
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        const isFav = this.watchlist.toggleFavorite(stateManager.activeSymbol);
+        if (isFav !== null) {
+          eventBus.emit("toast:show", {
+            title: isFav ? "Added to Starred" : "Removed from Starred",
+            message: stateManager.activeSymbol,
+            type: "info",
+          });
+        }
+        return;
+      }
+
       // "/" key: Open search modal (empty)
       if (e.key === "/") {
         e.preventDefault();

@@ -130,7 +130,7 @@ export async function fetchFutures24hTickers(): Promise<WatchlistTicker[]> {
         ? "TRADIFI_PERPETUAL"
         : contractTypeMap.get(t.symbol) || "PERPETUAL";
       const stockName = isTradFi ? getTradFiStockName(base) : undefined;
-      const industry = isTradFi ? getTradFiIndustry(base) : undefined;
+      const industry = getTradFiIndustry(base);
 
       return {
         symbol: t.symbol,

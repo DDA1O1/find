@@ -149,5 +149,3 @@ export class ToastComponent {
     return div.innerHTML;
   }
 }
-
-export const toastManager = new ToastComponent();
