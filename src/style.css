@@ -1575,3 +1575,114 @@ span.neg {
     max-width: 100%;
   }
 }
+
+/* ============================================================
+   Watchlist Column Sort Header
+   ============================================================ */
+
+.wl-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 34px; /* indent past star to align with sym title */
+  height: 28px;
+  min-height: 28px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.16);
+  flex-shrink: 0;
+}
+
+.wl-col-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.wl-col-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.wl-col-sym {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.wl-col-last {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.wl-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted, #64748b);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.wl-sort-btn:hover {
+  color: var(--text-primary, #e2e8f0);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.wl-sort-btn.active {
+  color: var(--accent, #3b82f6);
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.09);
+}
+
+.wl-sort-arrow {
+  font-size: 10px;
+  line-height: 1;
+  display: inline-block;
+  font-weight: 700;
+}
+
+/* ============================================================
+   Industry Tag Badge (next to TRADIFI badge)
+   ============================================================ */
+
+.wl-industry-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  margin-left: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  vertical-align: middle;
+}

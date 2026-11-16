@@ -290,6 +290,143 @@ export function getTradFiStockName(stockSymbol: string): string | undefined {
 }
 
 /**
+ * Industry/sector classification for TradiFi stocks.
+ * Short labels for display in watchlist row badges.
+ */
+export const TRADIFI_INDUSTRIES: Record<string, string> = {
+  // Semiconductors
+  NVDA: "SEMI",
+  AMD: "SEMI",
+  INTC: "SEMI",
+  QCOM: "SEMI",
+  AVGO: "SEMI",
+  AMAT: "SEMI",
+  LRCX: "SEMI",
+  KLAC: "SEMI",
+  MRVL: "SEMI",
+  NXPI: "SEMI",
+  TXN: "SEMI",
+  ADI: "SEMI",
+  ARM: "SEMI",
+  SNPS: "SEMI",
+  CDNS: "SEMI",
+  SMCI: "SEMI",
+  // Technology
+  AAPL: "TECH",
+  MSFT: "TECH",
+  GOOGL: "TECH",
+  GOOG: "TECH",
+  META: "TECH",
+  IBM: "TECH",
+  ORCL: "TECH",
+  CRM: "TECH",
+  NOW: "TECH",
+  WDAY: "TECH",
+  PANW: "CYBER",
+  CRWD: "CYBER",
+  FTNT: "CYBER",
+  PLTR: "AI",
+  ACN: "TECH",
+  CSCO: "TECH",
+  // Cloud / E-commerce
+  AMZN: "CLOUD",
+  // Crypto-linked
+  COIN: "CRYPTO",
+  MSTR: "CRYPTO",
+  CRCL: "CRYPTO",
+  // EV / Mobility
+  TSLA: "EV",
+  UBER: "MOBILITY",
+  // Media / Entertainment
+  NFLX: "MEDIA",
+  DIS: "MEDIA",
+  // E-commerce
+  BABA: "ECOMM",
+  MELI: "ECOMM",
+  PDD: "ECOMM",
+  // Finance
+  JPM: "FINANCE",
+  GS: "FINANCE",
+  MS: "FINANCE",
+  BAC: "FINANCE",
+  SPGI: "FINANCE",
+  PGR: "FINANCE",
+  // Fintech / Payments
+  V: "FINTECH",
+  MA: "FINTECH",
+  PYPL: "FINTECH",
+  // Healthcare / Biotech
+  LLY: "HEALTH",
+  JNJ: "HEALTH",
+  ABBV: "HEALTH",
+  MRK: "HEALTH",
+  UNH: "HEALTH",
+  ISRG: "HEALTH",
+  VRTX: "HEALTH",
+  REGN: "HEALTH",
+  TMO: "HEALTH",
+  DHR: "HEALTH",
+  ABT: "HEALTH",
+  BSX: "HEALTH",
+  SYK: "HEALTH",
+  // Energy
+  XOM: "ENERGY",
+  CVX: "ENERGY",
+  NEE: "ENERGY",
+  CEG: "ENERGY",
+  // Retail / Consumer
+  WMT: "RETAIL",
+  COST: "RETAIL",
+  MCD: "RETAIL",
+  HD: "RETAIL",
+  LOW: "RETAIL",
+  NKE: "CONSUMER",
+  PG: "CONSUMER",
+  KO: "CONSUMER",
+  PEP: "CONSUMER",
+  PM: "CONSUMER",
+  MDLZ: "CONSUMER",
+  // Travel
+  ABNB: "TRAVEL",
+  MAR: "TRAVEL",
+  BKNG: "TRAVEL",
+  // Industrial / Defense
+  BA: "DEFENSE",
+  RTX: "DEFENSE",
+  HON: "INDUSTRIAL",
+  CAT: "INDUSTRIAL",
+  GE: "INDUSTRIAL",
+  DE: "INDUSTRIAL",
+  ETN: "INDUSTRIAL",
+  LIN: "MATERIALS",
+  // ETFs
+  SPY: "ETF",
+  QQQ: "ETF",
+  TQQQ: "ETF",
+  SQQQ: "ETF",
+  SOXX: "ETF",
+  SMH: "ETF",
+  SOXL: "ETF",
+  SOXS: "ETF",
+  IWM: "ETF",
+  DIA: "ETF",
+  VOO: "ETF",
+  TLT: "ETF",
+  ARKK: "ETF",
+  XLF: "ETF",
+  XLK: "ETF",
+  XLE: "ETF",
+  XBI: "ETF",
+};
+
+/**
+ * Returns the short industry label for a TradiFi stock symbol (e.g. "NVDA" -> "SEMI").
+ */
+export function getTradFiIndustry(stockSymbol: string): string | undefined {
+  return TRADIFI_INDUSTRIES[stockSymbol.toUpperCase()];
+}
+
+/**
  * Normalizes candle timestamp to UTC boundaries for 1D and 1W candles so that
  * TradFi and Binance daily/weekly bars align to the exact same calendar timestamps.
  */

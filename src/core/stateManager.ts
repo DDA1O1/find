@@ -12,6 +12,9 @@ export interface AppState {
   isOnline: boolean;
   klineStatus: ConnectionStatus;
   allTickersStatus: ConnectionStatus;
+  watchlistFilter: string;
+  watchlistSortCol: "volume" | "change";
+  watchlistSortDir: "asc" | "desc";
 }
 
 const STORAGE_KEYS = {
@@ -19,6 +22,9 @@ const STORAGE_KEYS = {
   ACTIVE_TIMEFRAME: "tv_active_timeframe",
   INDICATORS: "tv_indicators_v1",
   CHART_TYPE: "tv_chart_type",
+  WL_FILTER: "tv_wl_filter",
+  WL_SORT_COL: "tv_wl_sort_col",
+  WL_SORT_DIR: "tv_wl_sort_dir",
 } as const;
 
 const DEFAULT_INDICATORS: IndicatorSettings = {
@@ -77,6 +83,10 @@ export class StateManager {
       isOnline: typeof navigator !== "undefined" ? navigator.onLine : true,
       klineStatus: "connecting",
       allTickersStatus: "connecting",
+      watchlistFilter: safeGetStorage(STORAGE_KEYS.WL_FILTER) || "all",
+      watchlistSortCol:
+        (safeGetStorage(STORAGE_KEYS.WL_SORT_COL) as "volume" | "change") || "volume",
+      watchlistSortDir: (safeGetStorage(STORAGE_KEYS.WL_SORT_DIR) as "asc" | "desc") || "desc",
     };
   }
 
@@ -204,6 +214,30 @@ export class StateManager {
     if (this.state.isOnline === isOnline) return;
     this.state.isOnline = isOnline;
     eventBus.emit("connection:network", { isOnline });
+  }
+
+  public get watchlistFilter(): string {
+    return this.state.watchlistFilter;
+  }
+
+  public get watchlistSortCol(): "volume" | "change" {
+    return this.state.watchlistSortCol;
+  }
+
+  public get watchlistSortDir(): "asc" | "desc" {
+    return this.state.watchlistSortDir;
+  }
+
+  public setWatchlistFilter(filter: string): void {
+    this.state.watchlistFilter = filter;
+    safeSetStorage(STORAGE_KEYS.WL_FILTER, filter);
+  }
+
+  public setWatchlistSort(col: "volume" | "change", dir: "asc" | "desc"): void {
+    this.state.watchlistSortCol = col;
+    this.state.watchlistSortDir = dir;
+    safeSetStorage(STORAGE_KEYS.WL_SORT_COL, col);
+    safeSetStorage(STORAGE_KEYS.WL_SORT_DIR, dir);
   }
 }
 

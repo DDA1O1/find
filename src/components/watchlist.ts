@@ -1,15 +1,17 @@
 import type { WatchlistTicker } from "../types";
 import { formatPercent, formatPrice, formatVolume } from "../utils/formatters";
 import { getSavedFavorites, saveFavorites } from "../api/binance";
+import { eventBus } from "../core/eventBus";
 
-export type WatchlistFilter =
-  | "all"
-  | "crypto"
-  | "tradifi"
-  | "favorites"
-  | "gainers"
-  | "losers"
-  | "volume";
+export type WatchlistFilter = "all" | "crypto" | "tradifi" | "favorites";
+export type WatchlistSortCol = "volume" | "change";
+export type WatchlistSortDir = "asc" | "desc";
+
+export interface WatchlistOptions {
+  initialFilter?: WatchlistFilter;
+  initialSortCol?: WatchlistSortCol;
+  initialSortDir?: WatchlistSortDir;
+}
 
 const ROW_HEIGHT = 52; // px per row
 const OVERSCAN = 6; // rows above and below visible area
@@ -24,6 +26,10 @@ export class WatchlistComponent {
   private onSelectSymbol: (symbol: string) => void;
 
   private favorites: Set<string>;
+
+  // Sort state
+  private sortCol: WatchlistSortCol = "volume";
+  private sortDir: WatchlistSortDir = "desc";
 
   // DOM Elements
   private listEl!: HTMLElement;
@@ -72,10 +78,18 @@ export class WatchlistComponent {
     container: HTMLElement,
     initialActiveSymbol: string,
     onSelectSymbol: (symbol: string) => void,
+    options: WatchlistOptions = {},
   ) {
     this.container = container;
     this.activeSymbol = initialActiveSymbol;
     this.onSelectSymbol = onSelectSymbol;
+
+    const validFilters: WatchlistFilter[] = ["all", "crypto", "tradifi", "favorites"];
+    this.currentFilter = validFilters.includes(options.initialFilter as WatchlistFilter)
+      ? (options.initialFilter as WatchlistFilter)
+      : "all";
+    this.sortCol = options.initialSortCol === "change" ? "change" : "volume";
+    this.sortDir = options.initialSortDir === "asc" ? "asc" : "desc";
 
     this.favorites = getSavedFavorites();
 
@@ -117,13 +131,25 @@ export class WatchlistComponent {
         </div>
 
         <div class="watchlist-tabs" id="wl-tabs">
-          <button class="wl-tab active" data-filter="all">All</button>
+          <button class="wl-tab" data-filter="all">All</button>
           <button class="wl-tab" data-filter="crypto">Crypto</button>
           <button class="wl-tab" data-filter="tradifi">TradiFi</button>
           <button class="wl-tab" data-filter="favorites">★ Starred</button>
-          <button class="wl-tab" data-filter="gainers">Gainers</button>
-          <button class="wl-tab" data-filter="losers">Losers</button>
-          <button class="wl-tab" data-filter="volume">Volume</button>
+        </div>
+
+        <div class="wl-col-header">
+          <div class="wl-col-left">
+            <span class="wl-col-sym">Symbol</span>
+            <button class="wl-sort-btn ${this.sortCol === "volume" ? "active" : ""}" data-col="volume" title="Sort by Market Cap">
+              Mkt Cap <span class="wl-sort-arrow">${this.sortCol === "volume" ? (this.sortDir === "desc" ? "↓" : "↑") : ""}</span>
+            </button>
+          </div>
+          <div class="wl-col-right">
+            <span class="wl-col-last">Last</span>
+            <button class="wl-sort-btn ${this.sortCol === "change" ? "active" : ""}" data-col="change" title="Sort by 24h Change %">
+              Chg% <span class="wl-sort-arrow">${this.sortCol === "change" ? (this.sortDir === "desc" ? "↓" : "↑") : ""}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -178,15 +204,37 @@ export class WatchlistComponent {
       this.renderVirtual(true);
     });
 
-    // Category filter tabs
+    // Category filter tabs — set initial active state from this.currentFilter
     const tabs = this.tabsContainerEl.querySelectorAll<HTMLButtonElement>(".wl-tab");
     tabs.forEach((tab) => {
+      tab.classList.toggle("active", tab.dataset.filter === this.currentFilter);
       tab.addEventListener("click", () => {
         tabs.forEach((t) => t.classList.remove("active"));
         tab.classList.add("active");
         this.currentFilter = (tab.dataset.filter as WatchlistFilter) || "all";
         this.filterAndSort();
         this.renderVirtual(true);
+        // Emit for persistence
+        eventBus.emit("watchlist:filterChange", { filter: this.currentFilter });
+      });
+    });
+
+    // Sort buttons
+    const sortBtns = this.container.querySelectorAll<HTMLButtonElement>(".wl-sort-btn");
+    sortBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const col = btn.dataset.col as WatchlistSortCol;
+        if (this.sortCol === col) {
+          this.sortDir = this.sortDir === "desc" ? "asc" : "desc";
+        } else {
+          this.sortCol = col;
+          this.sortDir = "desc";
+        }
+        this.updateSortHeader();
+        this.filterAndSort();
+        this.renderVirtual(true);
+        // Emit for persistence
+        eventBus.emit("watchlist:sortChange", { col: this.sortCol, dir: this.sortDir });
       });
     });
 
@@ -198,6 +246,23 @@ export class WatchlistComponent {
     this.dragHandleEl.addEventListener("touchstart", this.boundTouchStart, { passive: true });
     this.dragHandleEl.addEventListener("touchmove", this.boundTouchMove, { passive: false });
     this.dragHandleEl.addEventListener("touchend", this.boundTouchEnd, { passive: true });
+  }
+
+  /* ======================================================================== *
+   *  Sort header update
+   * ======================================================================== */
+
+  private updateSortHeader(): void {
+    const btns = this.container.querySelectorAll<HTMLButtonElement>(".wl-sort-btn");
+    btns.forEach((btn) => {
+      const col = btn.dataset.col as WatchlistSortCol;
+      const isActive = col === this.sortCol;
+      btn.classList.toggle("active", isActive);
+      const arrowEl = btn.querySelector(".wl-sort-arrow");
+      if (arrowEl) {
+        arrowEl.textContent = isActive ? (this.sortDir === "desc" ? "↓" : "↑") : "";
+      }
+    });
   }
 
   /* ======================================================================== *
@@ -304,7 +369,7 @@ export class WatchlistComponent {
       const isPos = ticker.change24h >= 0;
       const tagHtml =
         ticker.contractType === "TRADIFI_PERPETUAL"
-          ? '<span class="wl-tradifi-tag">TRADIFI</span>'
+          ? `<span class="wl-tradifi-tag">TRADIFI</span>${ticker.industry ? `<span class="wl-industry-tag">; ${ticker.industry}</span>` : ""}`
           : "";
 
       const volSubtitle = ticker.name
@@ -447,6 +512,7 @@ export class WatchlistComponent {
     }
     this.filterAndSort();
     this.renderVirtual(true);
+    this.ensureSymbolVisible(this.activeSymbol);
   }
 
   public syncTickers(freshTickers: WatchlistTicker[]): { added: string[]; removed: string[] } {
@@ -490,21 +556,36 @@ export class WatchlistComponent {
   }
 
   public setActiveSymbol(symbol: string): void {
-    if (this.activeSymbol === symbol) return;
+    if (this.activeSymbol === symbol) {
+      this.ensureSymbolVisible(symbol);
+      return;
+    }
 
-    // Deselect old row if currently rendered
     const oldRefs = this.renderedRows.get(this.activeSymbol);
     if (oldRefs) oldRefs.row.classList.remove("active");
 
     this.activeSymbol = symbol;
+    this.ensureSymbolVisible(symbol);
 
-    // Select new row if currently rendered
     const newRefs = this.renderedRows.get(symbol);
-    if (newRefs) {
-      newRefs.row.classList.add("active");
-    } else {
-      // Scroll to symbol if outside visible window
-      this.scrollToSymbol(symbol);
+    if (newRefs) newRefs.row.classList.add("active");
+  }
+
+  private ensureSymbolVisible(symbol: string): void {
+    const idx = this.sortedSymbols.indexOf(symbol);
+    if (idx === -1) return;
+    const itemTop = idx * ROW_HEIGHT;
+    const itemBottom = itemTop + ROW_HEIGHT;
+    const scrollTop = this.listEl.scrollTop;
+    const clientHeight = this.listEl.clientHeight || 500;
+    if (itemTop < scrollTop + ROW_HEIGHT) {
+      this.listEl.scrollTop = Math.max(0, itemTop - ROW_HEIGHT);
+      this.renderVirtual(true);
+    } else if (itemBottom > scrollTop + clientHeight - ROW_HEIGHT) {
+      this.listEl.scrollTop = itemTop - clientHeight + ROW_HEIGHT * 2;
+      this.renderVirtual(true);
+    } else if (!this.renderedRows.has(symbol)) {
+      this.renderVirtual(true);
     }
   }
 
@@ -528,23 +609,31 @@ export class WatchlistComponent {
       });
     }
 
+    // Filter phase
     if (this.currentFilter === "crypto") {
       list = list.filter((t) => t.contractType === "PERPETUAL" || !t.contractType);
     } else if (this.currentFilter === "tradifi") {
       list = list.filter((t) => t.contractType === "TRADIFI_PERPETUAL");
     } else if (this.currentFilter === "favorites") {
       list = list.filter((t) => t.isFavorite);
-    } else if (this.currentFilter === "gainers") {
-      list = list.sort((a, b) => b.change24h - a.change24h);
-    } else if (this.currentFilter === "losers") {
-      list = list.sort((a, b) => a.change24h - b.change24h);
-    } else if (this.currentFilter === "volume") {
-      list = list.sort((a, b) => b.quoteVolume24h - a.quoteVolume24h);
+    }
+
+    // Sort phase
+    if (this.sortCol === "change") {
+      list = list.sort((a, b) =>
+        this.sortDir === "desc" ? b.change24h - a.change24h : a.change24h - b.change24h,
+      );
     } else {
+      // "volume" = market cap (quoteVolume24h)
       list = list.sort((a, b) => {
-        if (a.isFavorite && !b.isFavorite) return -1;
-        if (!a.isFavorite && b.isFavorite) return 1;
-        return b.quoteVolume24h - a.quoteVolume24h;
+        // Always pin favorites to top in default sort
+        if (this.currentFilter === "all") {
+          if (a.isFavorite && !b.isFavorite) return -1;
+          if (!a.isFavorite && b.isFavorite) return 1;
+        }
+        return this.sortDir === "desc"
+          ? b.quoteVolume24h - a.quoteVolume24h
+          : a.quoteVolume24h - b.quoteVolume24h;
       });
     }
 
@@ -555,6 +644,7 @@ export class WatchlistComponent {
   public updateView(): void {
     this.filterAndSort();
     this.renderVirtual(true);
+    this.ensureSymbolVisible(this.activeSymbol);
   }
 
   private toggleFavorite(symbol: string): void {

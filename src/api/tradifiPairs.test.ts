@@ -3,6 +3,7 @@ import {
   isTradFiFuturesSymbol,
   getUnderlyingStockSymbol,
   getTradFiStockName,
+  getTradFiIndustry,
   normalizeCandleTime,
   mergeHistoricalCandles,
   registerTradFiPerpetualSymbol,
@@ -42,6 +43,15 @@ describe("TradFi Pairs & Chart Splicing", () => {
     expect(getTradFiStockName("NVDA")).toBe("NVIDIA Corporation");
     expect(getTradFiStockName("TSLA")).toBe("Tesla, Inc.");
     expect(getTradFiStockName("UNKNOWN")).toBeUndefined();
+  });
+
+  it("retrieves industry labels for TradiFi stocks", () => {
+    expect(getTradFiIndustry("NVDA")).toBe("SEMI");
+    expect(getTradFiIndustry("TSLA")).toBe("EV");
+    expect(getTradFiIndustry("AAPL")).toBe("TECH");
+    expect(getTradFiIndustry("COIN")).toBe("CRYPTO");
+    expect(getTradFiIndustry("SPY")).toBe("ETF");
+    expect(getTradFiIndustry("UNKNOWN")).toBeUndefined();
   });
 
   it("normalizes daily (1d) and weekly (1w) timestamps to UTC boundaries", () => {

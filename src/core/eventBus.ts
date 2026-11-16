@@ -37,6 +37,8 @@ export interface EventMap {
   "search:open": { initialChar?: string };
   "search:close": void;
   "watchlist:toggle": void;
+  "watchlist:filterChange": { filter: string };
+  "watchlist:sortChange": { col: "volume" | "change"; dir: "asc" | "desc" };
   "chart:fit": void;
 }
 

@@ -8,7 +8,7 @@ import {
   RateLimitError,
 } from "./api/binance";
 import { candleCache } from "./api/candleCache";
-import { WatchlistComponent } from "./components/watchlist";
+import { WatchlistComponent, type WatchlistFilter } from "./components/watchlist";
 import { HeaderComponent } from "./components/header";
 import { ToolbarComponent } from "./components/toolbar";
 import { SearchModalComponent } from "./components/searchModal";
@@ -82,9 +82,18 @@ export class App {
 
     // 4. Initialize Binance Futures Watchlist (with C3 Virtual Scrolling & D1 Debounce)
     const watchlistEl = document.getElementById("app-watchlist")!;
-    this.watchlist = new WatchlistComponent(watchlistEl, stateManager.activeSymbol, (newSymbol) => {
-      stateManager.setActiveSymbol(newSymbol);
-    });
+    this.watchlist = new WatchlistComponent(
+      watchlistEl,
+      stateManager.activeSymbol,
+      (newSymbol) => {
+        stateManager.setActiveSymbol(newSymbol);
+      },
+      {
+        initialFilter: stateManager.watchlistFilter as WatchlistFilter,
+        initialSortCol: stateManager.watchlistSortCol,
+        initialSortDir: stateManager.watchlistSortDir,
+      },
+    );
 
     // 5. Initialize Global Search Modal (TradingView-style)
     this.searchModal = new SearchModalComponent((symbol) => {
@@ -134,6 +143,23 @@ export class App {
           void this.loadCandles(stateManager.activeSymbol, stateManager.activeTimeframe);
         }
       }),
+    );
+
+    // Persist watchlist filter changes
+    this.eventBusUnsubs.push(
+      eventBus.on("watchlist:filterChange", ({ filter }: { filter: string }) => {
+        stateManager.setWatchlistFilter(filter);
+      }),
+    );
+
+    // Persist watchlist sort changes
+    this.eventBusUnsubs.push(
+      eventBus.on(
+        "watchlist:sortChange",
+        ({ col, dir }: { col: "volume" | "change"; dir: "asc" | "desc" }) => {
+          stateManager.setWatchlistSort(col, dir);
+        },
+      ),
     );
   }
 

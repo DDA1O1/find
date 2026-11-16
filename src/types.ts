@@ -23,6 +23,7 @@ export interface WatchlistTicker {
   quoteAsset: string;
   contractType?: string;
   name?: string;
+  industry?: string;
   price: number;
   prevPrice?: number;
   change24h: number;

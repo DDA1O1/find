@@ -73,4 +73,18 @@ describe("StateManager", () => {
 
     expect(state.indicators.ema20).toBe(true);
   });
+
+  it("persists and updates watchlist filter and sort state", () => {
+    const state = new StateManager();
+    expect(state.watchlistFilter).toBe("all");
+    expect(state.watchlistSortCol).toBe("volume");
+    expect(state.watchlistSortDir).toBe("desc");
+
+    state.setWatchlistFilter("tradifi");
+    expect(state.watchlistFilter).toBe("tradifi");
+
+    state.setWatchlistSort("change", "asc");
+    expect(state.watchlistSortCol).toBe("change");
+    expect(state.watchlistSortDir).toBe("asc");
+  });
 });

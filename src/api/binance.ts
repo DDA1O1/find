@@ -7,6 +7,7 @@ import type {
   WsTickerMessage,
 } from "../types";
 import {
+  getTradFiIndustry,
   getTradFiStockName,
   isTradFiFuturesSymbol,
   registerTradFiPerpetualSymbol,
@@ -129,12 +130,14 @@ export async function fetchFutures24hTickers(): Promise<WatchlistTicker[]> {
         ? "TRADIFI_PERPETUAL"
         : contractTypeMap.get(t.symbol) || "PERPETUAL";
       const stockName = isTradFi ? getTradFiStockName(base) : undefined;
+      const industry = isTradFi ? getTradFiIndustry(base) : undefined;
 
       return {
         symbol: t.symbol,
         baseAsset: base,
         quoteAsset: "USDT",
         name: stockName,
+        industry,
         contractType,
         price: parseFloat(t.lastPrice),
         prevPrice: parseFloat(t.lastPrice),
