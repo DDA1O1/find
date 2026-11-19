@@ -23,6 +23,7 @@ describe("IndicatorService", () => {
       sma200: false,
       bollingerBands: false,
       volume: true,
+      corporateEvents: true,
     };
 
     service.calculate(dummyCandles, settings);

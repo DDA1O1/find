@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from "vite-plus";
 import stockCandlesHandler from "./api/stock-candles";
+import stockEventsHandler from "./api/stock-events";
 
 function stockApiDevPlugin(): Plugin {
   return {
@@ -7,6 +8,9 @@ function stockApiDevPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use("/api/stock-candles", (req, res) => {
         void stockCandlesHandler(req, res);
+      });
+      server.middlewares.use("/api/stock-events", (req, res) => {
+        void stockEventsHandler(req, res);
       });
     },
   };

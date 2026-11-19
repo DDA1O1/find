@@ -1,4 +1,10 @@
-import type { CandleData, Timeframe } from "../types";
+import type {
+  CandleData,
+  CorporateEventsData,
+  StockDividendEvent,
+  StockSplitEvent,
+  Timeframe,
+} from "../types";
 
 export interface StockQuoteMeta {
   symbol: string;
@@ -15,6 +21,7 @@ export interface StockQuoteMeta {
 export interface StockCandleResponse {
   candles: CandleData[];
   meta: StockQuoteMeta;
+  events?: CorporateEventsData;
 }
 
 interface YahooChartMeta {
@@ -33,6 +40,13 @@ interface YahooChartMeta {
 interface YahooChartResult {
   meta?: YahooChartMeta;
   timestamp?: number[];
+  events?: {
+    splits?: Record<
+      string,
+      { date?: number; numerator?: number; denominator?: number; splitRatio?: string }
+    >;
+    dividends?: Record<string, { date?: number; amount?: number }>;
+  };
   indicators?: {
     quote?: Array<{
       open?: (number | null)[];
@@ -133,7 +147,190 @@ export function parseYahooChart(data: YahooChartResponse): StockCandleResponse {
     }
   }
 
-  return { candles, meta };
+  const todayNow = new Date();
+  const todayUtcMidnightSec = Math.floor(
+    Date.UTC(todayNow.getUTCFullYear(), todayNow.getUTCMonth(), todayNow.getUTCDate()) / 1000,
+  );
+
+  const splits: StockSplitEvent[] = [];
+  if (result.events?.splits) {
+    for (const s of Object.values(result.events.splits)) {
+      if (
+        typeof s?.date === "number" &&
+        Number.isFinite(s.date) &&
+        typeof s.numerator === "number" &&
+        Number.isFinite(s.numerator) &&
+        s.numerator > 0 &&
+        typeof s.denominator === "number" &&
+        Number.isFinite(s.denominator) &&
+        s.denominator > 0
+      ) {
+        const splitRatio =
+          typeof s.splitRatio === "string" && s.splitRatio.trim().length > 0
+            ? s.splitRatio.trim()
+            : `${s.numerator}:${s.denominator}`;
+        splits.push({
+          id: `split-${s.date}-${splitRatio}`,
+          type: "split",
+          date: s.date,
+          numerator: s.numerator,
+          denominator: s.denominator,
+          splitRatio,
+          isUpcoming: s.date >= todayUtcMidnightSec,
+        });
+      }
+    }
+    splits.sort((a, b) => a.date - b.date);
+  }
+
+  const dividends: StockDividendEvent[] = [];
+  if (result.events?.dividends) {
+    for (const d of Object.values(result.events.dividends)) {
+      if (
+        typeof d?.date === "number" &&
+        Number.isFinite(d.date) &&
+        typeof d.amount === "number" &&
+        Number.isFinite(d.amount) &&
+        d.amount > 0
+      ) {
+        const amount = Number(d.amount.toFixed(6));
+        dividends.push({
+          id: `div-${d.date}-${amount}`,
+          type: "dividend",
+          date: d.date,
+          amount,
+          currency: meta.currency,
+          isUpcoming: d.date >= todayUtcMidnightSec,
+        });
+      }
+    }
+    dividends.sort((a, b) => a.date - b.date);
+  }
+
+  const events: CorporateEventsData = {
+    symbol: meta.symbol,
+    currency: meta.currency,
+    splits,
+    dividends,
+  };
+
+  return { candles, meta, events };
+}
+
+function utcDateKey(timestampSec: number): string {
+  return new Date(timestampSec * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * Merges base Yahoo Finance corporate events with Nasdaq enrichment data
+ * (upcoming dividends, payment dates, annualized dividend & yield, upcoming splits).
+ */
+export function mergeCorporateEvents(
+  base: CorporateEventsData | undefined,
+  enrichment: CorporateEventsData | null | undefined,
+): CorporateEventsData | undefined {
+  if (!enrichment) return base;
+  if (!base) return enrichment;
+
+  const splitMap = new Map<string, StockSplitEvent>();
+  for (const s of base.splits) {
+    splitMap.set(utcDateKey(s.date), { ...s });
+  }
+  for (const s of enrichment.splits) {
+    const key = utcDateKey(s.date);
+    const existing = splitMap.get(key);
+    if (existing) {
+      splitMap.set(key, {
+        ...existing,
+        isUpcoming: existing.isUpcoming || s.isUpcoming,
+        splitRatio: existing.splitRatio || s.splitRatio,
+      });
+    } else {
+      splitMap.set(key, { ...s });
+    }
+  }
+  const splits = Array.from(splitMap.values()).sort((a, b) => a.date - b.date);
+
+  const annualizedDividend = enrichment.annualizedDividend ?? base.annualizedDividend;
+  const dividendYield = enrichment.dividendYield ?? base.dividendYield;
+
+  const divMap = new Map<string, StockDividendEvent>();
+  for (const d of base.dividends) {
+    divMap.set(utcDateKey(d.date), {
+      ...d,
+      annualizedRate: d.annualizedRate ?? annualizedDividend,
+      yieldPercent: d.yieldPercent ?? dividendYield,
+    });
+  }
+  for (const d of enrichment.dividends) {
+    const key = utcDateKey(d.date);
+    const existing = divMap.get(key);
+    if (existing) {
+      divMap.set(key, {
+        ...existing,
+        amount: existing.amount > 0 ? existing.amount : d.amount,
+        currency: existing.currency || d.currency,
+        isUpcoming: existing.isUpcoming || d.isUpcoming,
+        paymentDate: d.paymentDate ?? existing.paymentDate,
+        declarationDate: d.declarationDate ?? existing.declarationDate,
+        annualizedRate: d.annualizedRate ?? annualizedDividend ?? existing.annualizedRate,
+        yieldPercent: d.yieldPercent ?? dividendYield ?? existing.yieldPercent,
+      });
+    } else {
+      divMap.set(key, {
+        ...d,
+        annualizedRate: d.annualizedRate ?? annualizedDividend,
+        yieldPercent: d.yieldPercent ?? dividendYield,
+      });
+    }
+  }
+  const dividends = Array.from(divMap.values()).sort((a, b) => a.date - b.date);
+
+  return {
+    symbol: base.symbol || enrichment.symbol,
+    currency: base.currency || enrichment.currency || "USD",
+    splits,
+    dividends,
+    annualizedDividend,
+    dividendYield,
+  };
+}
+
+const EVENTS_CACHE_TTL_MS = 10 * 60 * 1000;
+const stockEventsCache = new Map<string, { data: CorporateEventsData; fetchedAt: number }>();
+const inFlightStockEvents = new Map<string, Promise<CorporateEventsData | null>>();
+
+/**
+ * Fetches upcoming dividends, payment dates, and upcoming splits non-blockingly.
+ */
+export async function fetchStockEvents(symbol: string): Promise<CorporateEventsData | null> {
+  const cleanSymbol = symbol.trim().toUpperCase();
+  if (!cleanSymbol) return null;
+
+  const cached = stockEventsCache.get(cleanSymbol);
+  if (cached && Date.now() - cached.fetchedAt < EVENTS_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const existing = inFlightStockEvents.get(cleanSymbol);
+  if (existing) return existing;
+
+  const promise = (async (): Promise<CorporateEventsData | null> => {
+    try {
+      const res = await fetch(`/api/stock-events?symbol=${encodeURIComponent(cleanSymbol)}`);
+      if (!res.ok) return null;
+      const data = (await res.json()) as CorporateEventsData;
+      stockEventsCache.set(cleanSymbol, { data, fetchedAt: Date.now() });
+      return data;
+    } catch {
+      return null;
+    } finally {
+      inFlightStockEvents.delete(cleanSymbol);
+    }
+  })();
+
+  inFlightStockEvents.set(cleanSymbol, promise);
+  return promise;
 }
 
 /**

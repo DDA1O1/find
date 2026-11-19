@@ -73,10 +73,45 @@ export interface WsTickerMessage {
   q: string; // 24h quote volume
 }
 
+export interface StockSplitEvent {
+  id: string;
+  type: "split";
+  date: number; // Unix timestamp in seconds (UTC)
+  numerator: number;
+  denominator: number;
+  splitRatio: string; // e.g. "10:1"
+  isUpcoming: boolean;
+}
+
+export interface StockDividendEvent {
+  id: string;
+  type: "dividend";
+  date: number; // Ex-dividend date, Unix timestamp in seconds (UTC)
+  amount: number; // Per-share cash amount, e.g. 0.27
+  currency: string; // e.g. "USD"
+  isUpcoming: boolean;
+  paymentDate?: string;
+  declarationDate?: string;
+  annualizedRate?: number;
+  yieldPercent?: string;
+}
+
+export type CorporateEvent = StockSplitEvent | StockDividendEvent;
+
+export interface CorporateEventsData {
+  symbol: string; // Underlying stock ticker e.g. "NVDA"
+  currency: string;
+  splits: StockSplitEvent[];
+  dividends: StockDividendEvent[];
+  annualizedDividend?: number;
+  dividendYield?: string;
+}
+
 export interface IndicatorSettings {
   ema20: boolean;
   ema50: boolean;
   sma200: boolean;
   bollingerBands: boolean;
   volume: boolean;
+  corporateEvents: boolean;
 }

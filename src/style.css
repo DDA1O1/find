@@ -568,6 +568,10 @@ input {
   background-color: #10b981;
   box-shadow: 0 0 6px #10b981;
 }
+.ind-color-box.events {
+  background: linear-gradient(135deg, #f59e0b 0%, #38bdf8 55%, #34d399 100%);
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.7);
+}
 
 /* ==========================================================================
    Chart Canvas & Floating Legend
@@ -1691,4 +1695,138 @@ span.neg {
   color: #38bdf8;
   background: rgba(56, 189, 248, 0.1);
   border-color: rgba(56, 189, 248, 0.25);
+}
+
+/* ============================================================
+   Corporate Events Tooltip Card (Splits & Dividends)
+   ============================================================ */
+.chart-event-tooltip {
+  position: absolute;
+  z-index: 12;
+  min-width: 210px;
+  max-width: 270px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(13, 17, 26, 0.94);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--border-hover);
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  color: var(--text-primary);
+  pointer-events: none;
+  user-select: none;
+  --caret-left: 50%;
+}
+
+.chart-event-tooltip.pinned {
+  pointer-events: auto;
+  user-select: text;
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.chart-event-tooltip::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: var(--caret-left);
+  transform: translateX(-50%) rotate(45deg);
+  width: 10px;
+  height: 10px;
+  background: rgba(13, 17, 26, 0.96);
+  border-right: 1px solid var(--border-hover);
+  border-bottom: 1px solid var(--border-hover);
+}
+
+.cet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.cet-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.cet-tag.split,
+.cet-tag.upcoming-split {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.cet-tag.upcoming-split {
+  border-style: dashed;
+}
+
+.cet-tag.dividend {
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.38);
+}
+
+.cet-tag.upcoming-div {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px dashed rgba(52, 211, 153, 0.5);
+}
+
+.cet-sym {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.cet-primary {
+  font-family: "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.cet-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 6px;
+}
+
+.cet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.cet-row span:first-child {
+  color: var(--text-muted);
+}
+
+.cet-row span:last-child {
+  font-family: "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.cet-hint {
+  margin-top: 7px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 9px;
+  color: var(--text-muted);
+  text-align: center;
 }

@@ -11,10 +11,39 @@ import {
   type UTCTimestamp,
   type MouseEventParams,
 } from "lightweight-charts";
-import type { CandleData, IndicatorSettings } from "../types";
+import type {
+  CandleData,
+  CorporateEvent,
+  CorporateEventsData,
+  IndicatorSettings,
+  Timeframe,
+} from "../types";
 import { IndicatorService, type IndicatorCalculationResults } from "./indicatorService";
+import {
+  CorporateEventsPrimitive,
+  formatDividendAmount,
+  type LaidOutBadge,
+} from "./corporateEventsPrimitive";
 
 export type ChartType = "candles" | "line" | "area";
+
+function escapeHtml(raw: string): string {
+  return raw
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatUtcEventDate(timestampSec: number): string {
+  return new Date(timestampSec * 1000).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
 
 export class ChartManager {
   private container: HTMLElement;
@@ -34,15 +63,22 @@ export class ChartManager {
 
   // C4: Web Worker indicator calculation service
   private indicatorService: IndicatorService;
+  private corporateEventsPrimitive: CorporateEventsPrimitive;
+  private eventTooltipEl: HTMLElement | null = null;
 
   private currentChartType: ChartType = "candles";
+  private currentTimeframe: Timeframe = "1d";
   private candles: CandleData[] = [];
+  private corporateEvents: CorporateEventsData | null = null;
+  private hoveredEventId: string | null = null;
+  private pinnedEventId: string | null = null;
   private indicatorSettings: IndicatorSettings = {
     ema20: false,
     ema50: false,
     sma200: false,
     bollingerBands: false,
     volume: true,
+    corporateEvents: true,
   };
 
   private resizeObserver: ResizeObserver | null = null;
@@ -50,7 +86,10 @@ export class ChartManager {
   private isHovering = false;
   private hoveredCandle: CandleData | null = null;
   private crosshairUnsub?: () => void;
+  private clickUnsub?: () => void;
+  private visibleRangeUnsub?: () => void;
   private mouseLeaveListener?: () => void;
+  private escapeKeyListener?: (e: KeyboardEvent) => void;
 
   constructor(
     container: HTMLElement,
@@ -58,6 +97,8 @@ export class ChartManager {
   ) {
     this.container = container;
     this.onLegendUpdate = onLegendUpdate;
+    this.eventTooltipEl =
+      this.container.parentElement?.querySelector<HTMLElement>("#chart-event-tooltip") ?? null;
 
     this.chart = createChart(container, {
       layout: {
@@ -97,7 +138,7 @@ export class ChartManager {
         borderColor: "rgba(255, 255, 255, 0.06)",
         scaleMargins: {
           top: 0.1,
-          bottom: 0.22, // leave room for volume
+          bottom: 0.24, // leave room for volume & corporate events rail
         },
         alignLabels: true,
       },
@@ -138,10 +179,14 @@ export class ChartManager {
 
     this.chart.priceScale("volume").applyOptions({
       scaleMargins: {
-        top: 0.8,
-        bottom: 0,
+        top: 0.78,
+        bottom: 0.055,
       },
     });
+
+    // TradingView-style Split & Dividend badges along bottom rail of volume pane
+    this.corporateEventsPrimitive = new CorporateEventsPrimitive();
+    this.chart.panes()[0]?.attachPrimitive(this.corporateEventsPrimitive);
 
     // Initialize C4: Worker indicator service
     this.indicatorService = new IndicatorService((results) => {
@@ -150,6 +195,7 @@ export class ChartManager {
 
     this.setupResizeHandler();
     this.setupCrosshairHandler();
+    this.setupEventInteractions();
   }
 
   private setupResizeHandler(): void {
@@ -163,8 +209,6 @@ export class ChartManager {
 
   private setupCrosshairHandler(): void {
     const handler = (param: MouseEventParams) => {
-      if (!this.onLegendUpdate) return;
-
       if (
         !param.point ||
         param.point.x < 0 ||
@@ -172,12 +216,24 @@ export class ChartManager {
         param.point.y < 0 ||
         param.point.y > this.container.clientHeight
       ) {
-        this.isHovering = false;
-        this.hoveredCandle = null;
-        const lastCandle = this.candles.length > 0 ? this.candles[this.candles.length - 1] : null;
-        this.onLegendUpdate({ candle: lastCandle, isHovered: false });
+        this.updateHoveredEvent(null);
+        if (this.onLegendUpdate) {
+          this.isHovering = false;
+          this.hoveredCandle = null;
+          const lastCandle = this.candles.length > 0 ? this.candles[this.candles.length - 1] : null;
+          this.onLegendUpdate({ candle: lastCandle, isHovered: false });
+        }
         return;
       }
+
+      const hoveredBadgeId =
+        param.hoveredInfo?.sourceKind === "pane-primitive" &&
+        typeof param.hoveredInfo.objectId === "string"
+          ? param.hoveredInfo.objectId
+          : null;
+      this.updateHoveredEvent(hoveredBadgeId);
+
+      if (!this.onLegendUpdate) return;
 
       let candle: CandleData | null = null;
       if (param.time) {
@@ -212,6 +268,7 @@ export class ChartManager {
     this.crosshairUnsub = () => this.chart.unsubscribeCrosshairMove(handler);
 
     this.mouseLeaveListener = () => {
+      this.updateHoveredEvent(null);
       this.isHovering = false;
       this.hoveredCandle = null;
       if (this.onLegendUpdate) {
@@ -220,6 +277,156 @@ export class ChartManager {
       }
     };
     this.container.addEventListener("mouseleave", this.mouseLeaveListener);
+  }
+
+  private setupEventInteractions(): void {
+    const clickHandler = (param: MouseEventParams) => {
+      if (!this.indicatorSettings.corporateEvents) return;
+
+      let clickedId =
+        param.hoveredInfo?.sourceKind === "pane-primitive" &&
+        typeof param.hoveredInfo.objectId === "string"
+          ? param.hoveredInfo.objectId
+          : null;
+
+      if (!clickedId && param.point) {
+        clickedId =
+          this.corporateEventsPrimitive.getBadgeAtPoint(param.point.x, param.point.y)?.event.id ??
+          null;
+      }
+
+      if (clickedId) {
+        this.pinnedEventId = this.pinnedEventId === clickedId ? null : clickedId;
+      } else if (this.pinnedEventId !== null) {
+        this.pinnedEventId = null;
+      } else {
+        return;
+      }
+
+      this.corporateEventsPrimitive.setActiveIds(this.hoveredEventId, this.pinnedEventId);
+      this.refreshEventTooltip();
+    };
+
+    this.chart.subscribeClick(clickHandler);
+    this.clickUnsub = () => this.chart.unsubscribeClick(clickHandler);
+
+    const rangeHandler = () => {
+      if (!this.hoveredEventId && !this.pinnedEventId) return;
+      requestAnimationFrame(() => this.refreshEventTooltip());
+    };
+    this.chart.timeScale().subscribeVisibleLogicalRangeChange(rangeHandler);
+    this.visibleRangeUnsub = () =>
+      this.chart.timeScale().unsubscribeVisibleLogicalRangeChange(rangeHandler);
+
+    this.escapeKeyListener = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && (this.pinnedEventId || this.hoveredEventId)) {
+        this.pinnedEventId = null;
+        this.hoveredEventId = null;
+        this.corporateEventsPrimitive.setActiveIds(null, null);
+        this.refreshEventTooltip();
+      }
+    };
+    window.addEventListener("keydown", this.escapeKeyListener);
+  }
+
+  private updateHoveredEvent(hoveredId: string | null): void {
+    const nextHovered = this.indicatorSettings.corporateEvents ? hoveredId : null;
+    if (this.hoveredEventId === nextHovered) return;
+    this.hoveredEventId = nextHovered;
+    this.corporateEventsPrimitive.setActiveIds(this.hoveredEventId, this.pinnedEventId);
+    this.refreshEventTooltip();
+  }
+
+  private refreshEventTooltip(): void {
+    const el = this.eventTooltipEl;
+    if (!el) return;
+
+    const activeId = this.hoveredEventId ?? this.pinnedEventId;
+    if (!activeId || !this.indicatorSettings.corporateEvents) {
+      el.style.display = "none";
+      el.classList.remove("pinned");
+      return;
+    }
+
+    const badge: LaidOutBadge | null = this.corporateEventsPrimitive.getBadgeLayoutById(activeId);
+    if (!badge) {
+      el.style.display = "none";
+      el.classList.remove("pinned");
+      return;
+    }
+
+    const isPinned = this.pinnedEventId === activeId;
+    el.classList.toggle("pinned", isPinned);
+    el.innerHTML = this.renderEventTooltipHtml(badge.event, isPinned);
+
+    el.style.visibility = "hidden";
+    el.style.display = "block";
+
+    const wrapperWidth = this.container.clientWidth || 600;
+    const tipWidth = el.offsetWidth || 220;
+    const tipHeight = el.offsetHeight || 96;
+
+    const badgeCenterX = badge.x + badge.width / 2;
+    const clampedLeft = Math.max(
+      8,
+      Math.min(wrapperWidth - tipWidth - 8, badgeCenterX - tipWidth / 2),
+    );
+    const top = Math.max(8, badge.y - tipHeight - 10);
+    const caretLeft = Math.max(12, Math.min(tipWidth - 12, badgeCenterX - clampedLeft));
+
+    el.style.left = `${clampedLeft}px`;
+    el.style.top = `${top}px`;
+    el.style.setProperty("--caret-left", `${caretLeft}px`);
+    el.style.visibility = "visible";
+  }
+
+  private renderEventTooltipHtml(event: CorporateEvent, isPinned: boolean): string {
+    const symbol = escapeHtml(this.corporateEvents?.symbol || "");
+    const dateLabel = formatUtcEventDate(event.date);
+
+    if (event.type === "split") {
+      const tagClass = event.isUpcoming ? "upcoming-split" : "split";
+      const tagText = event.isUpcoming ? "UPCOMING SPLIT" : "STOCK SPLIT";
+      const ratioDesc =
+        event.numerator >= event.denominator
+          ? `${event.numerator} shares for every ${event.denominator}`
+          : `${event.numerator} for ${event.denominator} reverse`;
+
+      return `
+        <div class="cet-header">
+          <span class="cet-tag ${tagClass}">${tagText}</span>
+          ${symbol ? `<span class="cet-sym">${symbol}</span>` : ""}
+        </div>
+        <div class="cet-primary">${escapeHtml(event.splitRatio)}</div>
+        <div class="cet-rows">
+          <div class="cet-row"><span>Effective</span><span>${escapeHtml(dateLabel)}</span></div>
+          <div class="cet-row"><span>Terms</span><span>${escapeHtml(ratioDesc)}</span></div>
+        </div>
+        ${isPinned ? '<div class="cet-hint">Pinned · Click badge or Esc to close</div>' : ""}
+      `;
+    }
+
+    const tagClass = event.isUpcoming ? "upcoming-div" : "dividend";
+    const tagText = event.isUpcoming ? "UPCOMING DIVIDEND" : "DIVIDEND";
+    const perShare = `${formatDividendAmount(event.amount, event.currency)} / share`;
+    const annualStr =
+      event.annualizedRate && event.annualizedRate > 0
+        ? `${formatDividendAmount(event.annualizedRate, event.currency)}${event.yieldPercent ? ` (${event.yieldPercent})` : ""}`
+        : event.yieldPercent || "";
+
+    return `
+      <div class="cet-header">
+        <span class="cet-tag ${tagClass}">${tagText}</span>
+        ${symbol ? `<span class="cet-sym">${symbol}</span>` : ""}
+      </div>
+      <div class="cet-primary">${escapeHtml(perShare)}</div>
+      <div class="cet-rows">
+        <div class="cet-row"><span>Ex-Dividend</span><span>${escapeHtml(dateLabel)}</span></div>
+        ${event.paymentDate ? `<div class="cet-row"><span>Pay Date</span><span>${escapeHtml(event.paymentDate)}</span></div>` : ""}
+        ${annualStr ? `<div class="cet-row"><span>Annual / Yield</span><span>${escapeHtml(annualStr)}</span></div>` : ""}
+      </div>
+      ${isPinned ? '<div class="cet-hint">Pinned · Click badge or Esc to close</div>' : ""}
+    `;
   }
 
   private _candlesMapCache: Map<number, CandleData> | null = null;
@@ -353,11 +560,24 @@ export class ChartManager {
   /**
    * Sets historical candle data
    */
-  public setData(candles: CandleData[]): void {
+  public setData(
+    candles: CandleData[],
+    timeframe?: Timeframe,
+    events?: CorporateEventsData | null,
+  ): void {
     this.isHovering = false;
     this.hoveredCandle = null;
+    this.hoveredEventId = null;
+    this.pinnedEventId = null;
     this.candles = candles;
     this._candlesMapCache = null;
+
+    if (timeframe) {
+      this.currentTimeframe = timeframe;
+    }
+    if (events !== undefined) {
+      this.corporateEvents = events;
+    }
 
     if (candles.length > 0) {
       this.setPrecision(candles[candles.length - 1].close);
@@ -398,10 +618,31 @@ export class ChartManager {
     this.recalculateIndicators();
     this.chart.timeScale().fitContent();
 
+    this.corporateEventsPrimitive.setActiveIds(null, null);
+    this.corporateEventsPrimitive.setData(
+      this.candles,
+      this.currentTimeframe,
+      this.corporateEvents,
+    );
+    this.refreshEventTooltip();
+
     if (this.onLegendUpdate) {
       const lastCandle = candles.length > 0 ? candles[candles.length - 1] : null;
       this.onLegendUpdate({ candle: lastCandle, isHovered: false });
     }
+  }
+
+  /**
+   * Updates corporate events (splits & dividends) asynchronously without resetting zoom/pan
+   */
+  public setCorporateEvents(events: CorporateEventsData | null): void {
+    this.corporateEvents = events;
+    this.corporateEventsPrimitive.setData(
+      this.candles,
+      this.currentTimeframe,
+      this.corporateEvents,
+    );
+    this.refreshEventTooltip();
   }
 
   /**
@@ -415,10 +656,11 @@ export class ChartManager {
 
     const lastIdx = this.candles.length - 1;
     const last = this.candles[lastIdx];
+    const pushedNewBar = candle.time > last.time;
 
     if (candle.time === last.time) {
       this.candles[lastIdx] = candle;
-    } else if (candle.time > last.time) {
+    } else if (pushedNewBar) {
       this.candles.push(candle);
     }
 
@@ -450,6 +692,14 @@ export class ChartManager {
 
     if (isClosed || this.candles.length % 5 === 0) {
       this.recalculateIndicators();
+    }
+
+    if (pushedNewBar && this.corporateEvents) {
+      this.corporateEventsPrimitive.setData(
+        this.candles,
+        this.currentTimeframe,
+        this.corporateEvents,
+      );
     }
 
     if (this.onLegendUpdate) {
@@ -584,6 +834,14 @@ export class ChartManager {
         })),
       );
     }
+
+    this.corporateEventsPrimitive.setVisible(this.indicatorSettings.corporateEvents);
+    if (!this.indicatorSettings.corporateEvents) {
+      this.hoveredEventId = null;
+      this.pinnedEventId = null;
+      this.corporateEventsPrimitive.setActiveIds(null, null);
+      this.refreshEventTooltip();
+    }
   }
 
   public getIndicators(): IndicatorSettings {
@@ -606,10 +864,23 @@ export class ChartManager {
       this.crosshairUnsub();
       this.crosshairUnsub = undefined;
     }
+    if (this.clickUnsub) {
+      this.clickUnsub();
+      this.clickUnsub = undefined;
+    }
+    if (this.visibleRangeUnsub) {
+      this.visibleRangeUnsub();
+      this.visibleRangeUnsub = undefined;
+    }
     if (this.mouseLeaveListener) {
       this.container.removeEventListener("mouseleave", this.mouseLeaveListener);
       this.mouseLeaveListener = undefined;
     }
+    if (this.escapeKeyListener) {
+      window.removeEventListener("keydown", this.escapeKeyListener);
+      this.escapeKeyListener = undefined;
+    }
+    this.chart.panes()[0]?.detachPrimitive(this.corporateEventsPrimitive);
     this.indicatorService.destroy();
     this.chart.remove();
   }

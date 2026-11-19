@@ -1,4 +1,4 @@
-import type { CandleData, Timeframe } from "../types";
+import type { CandleData, CorporateEventsData, Timeframe } from "../types";
 import { fetchKlines } from "./binance";
 import { fetchStockCandles, type StockQuoteMeta } from "./stockFetch";
 import { getUnderlyingStockSymbol, mergeHistoricalCandles } from "./tradifiPairs";
@@ -6,6 +6,7 @@ import { getUnderlyingStockSymbol, mergeHistoricalCandles } from "./tradifiPairs
 interface CacheEntry {
   candles: CandleData[];
   meta?: StockQuoteMeta;
+  events?: CorporateEventsData;
   cachedAt: number;
 }
 
@@ -16,7 +17,7 @@ export class CandleCacheManager {
   private cache = new Map<string, CacheEntry>();
   private inFlightRequests = new Map<
     string,
-    Promise<{ candles: CandleData[]; meta?: StockQuoteMeta }>
+    Promise<{ candles: CandleData[]; meta?: StockQuoteMeta; events?: CorporateEventsData }>
   >();
 
   private getCacheKey(symbol: string, timeframe: Timeframe): string {
@@ -30,13 +31,13 @@ export class CandleCacheManager {
   public get(
     symbol: string,
     timeframe: Timeframe,
-  ): { candles: CandleData[]; meta?: StockQuoteMeta } | null {
+  ): { candles: CandleData[]; meta?: StockQuoteMeta; events?: CorporateEventsData } | null {
     const key = this.getCacheKey(symbol, timeframe);
     const entry = this.cache.get(key);
     if (!entry) return null;
 
     // Return immediately for instant 0ms render
-    return { candles: entry.candles, meta: entry.meta };
+    return { candles: entry.candles, meta: entry.meta, events: entry.events };
   }
 
   public set(
@@ -44,6 +45,7 @@ export class CandleCacheManager {
     timeframe: Timeframe,
     candles: CandleData[],
     meta?: StockQuoteMeta,
+    events?: CorporateEventsData,
   ): void {
     const key = this.getCacheKey(symbol, timeframe);
 
@@ -56,15 +58,29 @@ export class CandleCacheManager {
     this.cache.set(key, {
       candles,
       meta,
+      events,
       cachedAt: Date.now(),
     });
+  }
+
+  public updateEvents(symbol: string, timeframe: Timeframe, events: CorporateEventsData): void {
+    const key = this.getCacheKey(symbol, timeframe);
+    const entry = this.cache.get(key);
+    if (entry) {
+      entry.events = events;
+    }
   }
 
   public async getOrFetch(
     symbol: string,
     timeframe: Timeframe,
     limit = 500,
-  ): Promise<{ candles: CandleData[]; meta?: StockQuoteMeta; isInstant: boolean }> {
+  ): Promise<{
+    candles: CandleData[];
+    meta?: StockQuoteMeta;
+    events?: CorporateEventsData;
+    isInstant: boolean;
+  }> {
     const key = this.getCacheKey(symbol, timeframe);
     const entry = this.cache.get(key);
 
@@ -74,19 +90,24 @@ export class CandleCacheManager {
       if (Date.now() - entry.cachedAt > CACHE_TTL_MS) {
         void this.fetchAndStore(symbol, timeframe, limit);
       }
-      return { candles: entry.candles, meta: entry.meta, isInstant: true };
+      return { candles: entry.candles, meta: entry.meta, events: entry.events, isInstant: true };
     }
 
     // In-flight deduplication
     const result = await this.fetchAndStore(symbol, timeframe, limit);
-    return { candles: result.candles, meta: result.meta, isInstant: false };
+    return {
+      candles: result.candles,
+      meta: result.meta,
+      events: result.events,
+      isInstant: false,
+    };
   }
 
   private async fetchAndStore(
     symbol: string,
     timeframe: Timeframe,
     limit: number,
-  ): Promise<{ candles: CandleData[]; meta?: StockQuoteMeta }> {
+  ): Promise<{ candles: CandleData[]; meta?: StockQuoteMeta; events?: CorporateEventsData }> {
     const key = this.getCacheKey(symbol, timeframe);
 
     // Deduplicate concurrent requests for same symbol/timeframe
@@ -96,9 +117,9 @@ export class CandleCacheManager {
 
     const request = (async () => {
       if (this.isStock(symbol)) {
-        const { candles, meta } = await fetchStockCandles(symbol, timeframe);
-        this.set(symbol, timeframe, candles, meta);
-        return { candles, meta };
+        const { candles, meta, events } = await fetchStockCandles(symbol, timeframe);
+        this.set(symbol, timeframe, candles, meta, events);
+        return { candles, meta, events };
       }
 
       // Check if this Binance futures pair is a TradFi stock perpetual (e.g. NVDAUSDT, TSLAUSDT)
@@ -113,17 +134,19 @@ export class CandleCacheManager {
         const binanceCandles = binanceResult.status === "fulfilled" ? binanceResult.value : [];
         const yahooCandles = yahooResult.status === "fulfilled" ? yahooResult.value.candles : [];
         const yahooMeta = yahooResult.status === "fulfilled" ? yahooResult.value.meta : undefined;
+        const yahooEvents =
+          yahooResult.status === "fulfilled" ? yahooResult.value.events : undefined;
 
         if (binanceCandles.length > 0 && yahooCandles.length > 0) {
           const merged = mergeHistoricalCandles(binanceCandles, yahooCandles, timeframe);
-          this.set(symbol, timeframe, merged, yahooMeta);
-          return { candles: merged, meta: yahooMeta };
+          this.set(symbol, timeframe, merged, yahooMeta, yahooEvents);
+          return { candles: merged, meta: yahooMeta, events: yahooEvents };
         } else if (binanceCandles.length > 0) {
-          this.set(symbol, timeframe, binanceCandles);
-          return { candles: binanceCandles };
+          this.set(symbol, timeframe, binanceCandles, yahooMeta, yahooEvents);
+          return { candles: binanceCandles, meta: yahooMeta, events: yahooEvents };
         } else if (yahooCandles.length > 0) {
-          this.set(symbol, timeframe, yahooCandles, yahooMeta);
-          return { candles: yahooCandles, meta: yahooMeta };
+          this.set(symbol, timeframe, yahooCandles, yahooMeta, yahooEvents);
+          return { candles: yahooCandles, meta: yahooMeta, events: yahooEvents };
         } else {
           throw new Error(`Failed to load chart data for ${symbol}`);
         }

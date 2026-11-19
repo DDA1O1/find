@@ -1,5 +1,5 @@
 import "./style.css";
-import type { CandleData, Timeframe } from "./types";
+import type { CandleData, CorporateEventsData, Timeframe } from "./types";
 import { ChartManager } from "./chart/chartManager";
 import {
   AllTickersSocketClient,
@@ -8,6 +8,8 @@ import {
   RateLimitError,
 } from "./api/binance";
 import { candleCache } from "./api/candleCache";
+import { fetchStockEvents, mergeCorporateEvents } from "./api/stockFetch";
+import { getUnderlyingStockSymbol } from "./api/tradifiPairs";
 import { WatchlistComponent, type WatchlistFilter } from "./components/watchlist";
 import { HeaderComponent } from "./components/header";
 import { ToolbarComponent } from "./components/toolbar";
@@ -36,6 +38,7 @@ export class App {
   private catalogSyncInterval: number | null = null;
   private unbindShortcuts?: () => void;
   private eventBusUnsubs: Array<() => void> = [];
+  private loadSeq = 0;
   private isDestroyed = false;
 
   constructor() {
@@ -60,6 +63,7 @@ export class App {
     this.chartManager = new ChartManager(chartContainer, ({ candle, isHovered }) => {
       this.toolbar.updateLegend(stateManager.activeSymbol, candle, isHovered);
     });
+    this.chartManager.setIndicators(stateManager.indicators);
 
     // 3. Initialize Toolbar
     const toolbarEl = document.getElementById("app-toolbar")!;
@@ -317,17 +321,19 @@ export class App {
   }
 
   private async loadCandles(symbol: string, interval: Timeframe): Promise<void> {
+    const seq = ++this.loadSeq;
     const cached = candleCache.get(symbol, interval);
     if (cached) {
       // 0ms instantaneous render from in-memory cache
       this.hideLoading();
-      this.chartManager.setData(cached.candles);
+      this.chartManager.setData(cached.candles, interval, cached.events ?? null);
 
       const lastCandle = cached.candles[cached.candles.length - 1];
       if (lastCandle) {
         this.header.updatePriceOnly(lastCandle.close);
       }
 
+      void this.enrichCorporateEvents(symbol, interval, cached.events, seq);
       this.triggerPrefetch();
       return;
     }
@@ -337,9 +343,11 @@ export class App {
     }, 120);
 
     try {
-      const { candles } = await candleCache.getOrFetch(symbol, interval, 500);
+      const { candles, events } = await candleCache.getOrFetch(symbol, interval, 500);
       window.clearTimeout(spinnerTimer);
-      this.chartManager.setData(candles);
+      if (this.isDestroyed || seq !== this.loadSeq) return;
+
+      this.chartManager.setData(candles, interval, events ?? null);
       this.hideLoading();
 
       const lastCandle = candles[candles.length - 1];
@@ -347,9 +355,11 @@ export class App {
         this.header.updatePriceOnly(lastCandle.close);
       }
 
+      void this.enrichCorporateEvents(symbol, interval, events, seq);
       this.triggerPrefetch();
     } catch (err) {
       window.clearTimeout(spinnerTimer);
+      if (this.isDestroyed || seq !== this.loadSeq) return;
       console.error(`Failed to load candles for ${symbol}:`, err);
 
       let retryDelayMs = 3000;
@@ -360,7 +370,30 @@ export class App {
       this.showLoading(
         `Error loading ${symbol} chart. Retrying in ${Math.round(retryDelayMs / 1000)}s...`,
       );
-      setTimeout(() => void this.loadCandles(symbol, interval), retryDelayMs);
+      setTimeout(() => {
+        if (!this.isDestroyed && seq === this.loadSeq) {
+          void this.loadCandles(symbol, interval);
+        }
+      }, retryDelayMs);
+    }
+  }
+
+  private async enrichCorporateEvents(
+    symbol: string,
+    interval: Timeframe,
+    baseEvents: CorporateEventsData | undefined,
+    seq: number,
+  ): Promise<void> {
+    const stockSym = getUnderlyingStockSymbol(symbol);
+    if (!stockSym) return;
+
+    const nasdaqEvents = await fetchStockEvents(stockSym);
+    if (this.isDestroyed || seq !== this.loadSeq || !nasdaqEvents) return;
+
+    const merged = mergeCorporateEvents(baseEvents, nasdaqEvents);
+    if (merged) {
+      candleCache.updateEvents(symbol, interval, merged);
+      this.chartManager.setCorporateEvents(merged);
     }
   }
 

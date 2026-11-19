@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { CandleCacheManager } from "./candleCache";
-import type { CandleData } from "../types";
+import type { CandleData, CorporateEventsData } from "../types";
 
 describe("CandleCacheManager", () => {
   const dummyCandles: CandleData[] = [
@@ -44,5 +44,48 @@ describe("CandleCacheManager", () => {
     manager.clear();
 
     expect(manager.get("BTCUSDT", "15m")).toBeNull();
+  });
+
+  it("stores, retrieves, and updates corporate events alongside candles", () => {
+    const manager = new CandleCacheManager();
+    const initialEvents: CorporateEventsData = {
+      symbol: "NVDA",
+      currency: "USD",
+      splits: [
+        {
+          id: "split-1718026200-10:1",
+          type: "split",
+          date: 1718026200,
+          numerator: 10,
+          denominator: 1,
+          splitRatio: "10:1",
+          isUpcoming: false,
+        },
+      ],
+      dividends: [],
+    };
+
+    manager.set("NVDAUSDT", "1d", dummyCandles, undefined, initialEvents);
+    expect(manager.get("NVDAUSDT", "1d")?.events).toEqual(initialEvents);
+
+    const enrichedEvents: CorporateEventsData = {
+      ...initialEvents,
+      annualizedDividend: 1,
+      dividendYield: "0.64%",
+      dividends: [
+        {
+          id: "div-1796083200-0.25",
+          type: "dividend",
+          date: 1796083200,
+          amount: 0.25,
+          currency: "USD",
+          isUpcoming: true,
+          paymentDate: "12/15/2026",
+        },
+      ],
+    };
+
+    manager.updateEvents("NVDAUSDT", "1d", enrichedEvents);
+    expect(manager.get("NVDAUSDT", "1d")?.events).toEqual(enrichedEvents);
   });
 });

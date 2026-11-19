@@ -129,6 +129,11 @@ export class ToolbarComponent {
               <span class="ind-color-box vol"></span>
               <span class="ind-name">Volume Histogram</span>
             </label>
+            <label class="ind-item">
+              <input type="checkbox" id="ind-events" ${this.indicatorSettings.corporateEvents ? "checked" : ""} />
+              <span class="ind-color-box events"></span>
+              <span class="ind-name">Splits & Dividends</span>
+            </label>
           </div>
         </div>
       </div>
@@ -194,6 +199,7 @@ export class ToolbarComponent {
     bindCheckbox("#ind-sma200", "sma200");
     bindCheckbox("#ind-bb", "bollingerBands");
     bindCheckbox("#ind-vol", "volume");
+    bindCheckbox("#ind-events", "corporateEvents");
   }
 
   public updateLegend(symbol: string, candle: CandleData | null, isHovered: boolean): void {

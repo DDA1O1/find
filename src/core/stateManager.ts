@@ -33,6 +33,7 @@ const DEFAULT_INDICATORS: IndicatorSettings = {
   sma200: false,
   bollingerBands: false,
   volume: true,
+  corporateEvents: true,
 };
 
 function safeGetStorage(key: string): string | null {
