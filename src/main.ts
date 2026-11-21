@@ -34,15 +34,22 @@ export class App {
   private loadingOverlay = document.getElementById("chart-loading")!;
   private loadingText = document.getElementById("chart-loading-text")!;
   private watchlistAside = document.getElementById("app-watchlist")!;
+  private watchlistBackdrop = document.getElementById("watchlist-backdrop");
+  private mobileNav = document.getElementById("mobile-nav");
 
   private catalogSyncInterval: number | null = null;
   private unbindShortcuts?: () => void;
+  private unbindMobileListeners?: () => void;
   private eventBusUnsubs: Array<() => void> = [];
   private loadSeq = 0;
   private isDestroyed = false;
 
   constructor() {
     void this.init();
+  }
+
+  private isMobileViewport(): boolean {
+    return typeof window !== "undefined" && window.innerWidth <= 768;
   }
 
   private async init(): Promise<void> {
@@ -56,6 +63,7 @@ export class App {
       headerEl,
       () => this.toggleWatchlist(),
       () => this.chartManager.fitContent(),
+      () => this.openSearchModal(),
     );
 
     // 2. Initialize Chart Manager (with C4 Worker & D3 Lazy indicators)
@@ -91,19 +99,34 @@ export class App {
       stateManager.activeSymbol,
       (newSymbol) => {
         stateManager.setActiveSymbol(newSymbol);
+        if (this.isMobileViewport()) {
+          this.setWatchlistOpen(false);
+        }
       },
       {
         initialFilter: stateManager.watchlistFilter as WatchlistFilter,
         initialSortCol: stateManager.watchlistSortCol,
         initialSortDir: stateManager.watchlistSortDir,
+        onCollapseChange: (collapsed) => {
+          this.syncWatchlistBackdrop(!collapsed);
+          this.syncMobileNavState();
+        },
       },
     );
 
     // 5. Initialize Global Search Modal (TradingView-style)
-    this.searchModal = new SearchModalComponent((symbol) => {
-      stateManager.setActiveSymbol(symbol);
-      this.watchlist.setActiveSymbol(symbol);
-    });
+    this.searchModal = new SearchModalComponent(
+      (symbol) => {
+        stateManager.setActiveSymbol(symbol);
+        this.watchlist.setActiveSymbol(symbol);
+      },
+      () => {
+        this.syncMobileNavState();
+      },
+    );
+
+    // 5b. Mobile-first shell: start with Watchlist collapsed so Chart opens cleanly
+    this.setupMobileNavigation();
 
     // 6. Connect EventBus Subscriptions (C1, C2)
     this.setupEventBus();
@@ -167,8 +190,98 @@ export class App {
     );
   }
 
+  private setupMobileNavigation(): void {
+    if (this.isMobileViewport()) {
+      this.watchlistAside.classList.add("collapsed");
+      this.watchlist.ensureMobileFilter();
+    }
+
+    const onBackdropClick = () => {
+      this.setWatchlistOpen(false);
+    };
+    this.watchlistBackdrop?.addEventListener("click", onBackdropClick);
+
+    const onNavClick = (e: Event) => {
+      const btn = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>(".mobile-nav-btn");
+      if (!btn) return;
+      const target = btn.dataset.nav;
+      if (target === "chart") {
+        if (this.searchModal.opened) this.searchModal.close();
+        this.setWatchlistOpen(false);
+      } else if (target === "search") {
+        this.setWatchlistOpen(false);
+        this.openSearchModal();
+      } else if (target === "watchlist") {
+        if (this.searchModal.opened) this.searchModal.close();
+        this.toggleWatchlist();
+      }
+    };
+    this.mobileNav?.addEventListener("click", onNavClick);
+
+    const mobileMq =
+      typeof window !== "undefined" && typeof window.matchMedia === "function"
+        ? window.matchMedia("(max-width: 768px)")
+        : null;
+    const onMqChange = (e: MediaQueryListEvent) => {
+      if (e.matches) {
+        this.watchlistAside.classList.add("collapsed");
+        this.watchlist.ensureMobileFilter();
+        this.syncWatchlistBackdrop(false);
+      } else {
+        this.watchlistAside.classList.remove("collapsed");
+        this.syncWatchlistBackdrop(false);
+      }
+      this.syncMobileNavState();
+    };
+    mobileMq?.addEventListener("change", onMqChange);
+
+    this.unbindMobileListeners = () => {
+      this.watchlistBackdrop?.removeEventListener("click", onBackdropClick);
+      this.mobileNav?.removeEventListener("click", onNavClick);
+      mobileMq?.removeEventListener("change", onMqChange);
+    };
+
+    this.syncMobileNavState();
+  }
+
+  private openSearchModal(initialChar?: string): void {
+    if (this.isMobileViewport()) {
+      this.setWatchlistOpen(false);
+    }
+    this.searchModal.setTickers(stateManager.allTickers);
+    this.searchModal.open(initialChar);
+  }
+
+  private setWatchlistOpen(open: boolean): void {
+    this.watchlistAside.classList.toggle("collapsed", !open);
+    this.syncWatchlistBackdrop(open);
+    this.syncMobileNavState();
+  }
+
+  private syncWatchlistBackdrop(open: boolean): void {
+    if (!this.watchlistBackdrop) return;
+    const show = open && this.isMobileViewport();
+    this.watchlistBackdrop.classList.toggle("visible", show);
+  }
+
+  private syncMobileNavState(): void {
+    if (!this.mobileNav) return;
+    const isSearchOpen = this.searchModal?.opened ?? false;
+    const isWatchlistOpen =
+      this.isMobileViewport() && !this.watchlistAside.classList.contains("collapsed");
+
+    const activeTab = isSearchOpen ? "search" : isWatchlistOpen ? "watchlist" : "chart";
+    const buttons = this.mobileNav.querySelectorAll<HTMLButtonElement>(".mobile-nav-btn");
+    buttons.forEach((btn) => {
+      const isActive = btn.dataset.nav === activeTab;
+      btn.classList.toggle("active", isActive);
+      btn.setAttribute("aria-current", isActive ? "page" : "false");
+    });
+  }
+
   private toggleWatchlist(): void {
-    this.watchlistAside.classList.toggle("collapsed");
+    const isCurrentlyOpen = !this.watchlistAside.classList.contains("collapsed");
+    this.setWatchlistOpen(!isCurrentlyOpen);
   }
 
   private setupShortcuts(): void {
@@ -384,6 +497,8 @@ export class App {
     baseEvents: CorporateEventsData | undefined,
     seq: number,
   ): Promise<void> {
+    if (this.isMobileViewport()) return;
+
     const stockSym = getUnderlyingStockSymbol(symbol);
     if (!stockSym) return;
 
@@ -480,6 +595,11 @@ export class App {
     if (this.unbindShortcuts) {
       this.unbindShortcuts();
       this.unbindShortcuts = undefined;
+    }
+
+    if (this.unbindMobileListeners) {
+      this.unbindMobileListeners();
+      this.unbindMobileListeners = undefined;
     }
 
     for (const unsub of this.eventBusUnsubs) {

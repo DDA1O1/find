@@ -52,10 +52,10 @@ export class ToolbarComponent {
   private render(): void {
     this.container.innerHTML = `
       <div class="toolbar-left">
-        <div class="tf-group" id="tf-group">
+        <div class="tf-group" id="tf-group" role="region" aria-label="Timeframes">
           ${TIMEFRAMES.map(
             (tf) => `
-            <button class="tb-btn tf-btn ${tf.value === this.activeTimeframe ? "active" : ""}" data-tf="${tf.value}">
+            <button type="button" class="tb-btn tf-btn ${tf.value === this.activeTimeframe ? "active" : ""}" data-tf="${tf.value}">
               ${tf.label}
             </button>
           `,
@@ -91,13 +91,13 @@ export class ToolbarComponent {
         <div class="tb-divider"></div>
 
         <div class="indicators-menu-wrapper">
-          <button class="tb-btn" id="btn-indicators">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button type="button" class="tb-btn" id="btn-indicators" aria-label="Indicators" aria-expanded="false">
+            <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="4 19 8 13 12 17 16 9 20 13"/>
               <line x1="4" y1="5" x2="20" y2="5"/>
             </svg>
-            <span>Indicators</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <span class="ind-btn-label">Indicators</span>
+            <svg aria-hidden="true" class="ind-btn-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="6 9 12 15 18 9"/>
             </svg>
           </button>
@@ -129,7 +129,7 @@ export class ToolbarComponent {
               <span class="ind-color-box vol"></span>
               <span class="ind-name">Volume Histogram</span>
             </label>
-            <label class="ind-item">
+            <label class="ind-item ind-item-events">
               <input type="checkbox" id="ind-events" ${this.indicatorSettings.corporateEvents ? "checked" : ""} />
               <span class="ind-color-box events"></span>
               <span class="ind-name">Splits & Dividends</span>
@@ -175,12 +175,14 @@ export class ToolbarComponent {
       e.stopPropagation();
       this.indicatorsDropdownOpen = !this.indicatorsDropdownOpen;
       dropdown.style.display = this.indicatorsDropdownOpen ? "block" : "none";
+      indBtn.setAttribute("aria-expanded", String(this.indicatorsDropdownOpen));
     });
 
     this.documentClickListener = (e: MouseEvent) => {
       if (!this.container.contains(e.target as Node)) {
         this.indicatorsDropdownOpen = false;
         dropdown.style.display = "none";
+        indBtn.setAttribute("aria-expanded", "false");
       }
     };
     document.addEventListener("click", this.documentClickListener);

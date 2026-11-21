@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#080a0f" />
     <title>TradingView | Binance Futures</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -41,8 +41,61 @@
           </div>
         </main>
 
+        <div id="watchlist-backdrop" class="watchlist-backdrop" aria-hidden="true"></div>
         <aside id="app-watchlist" class="app-watchlist"></aside>
       </div>
+
+      <nav id="mobile-nav" class="mobile-nav" aria-label="Primary navigation">
+        <button type="button" class="mobile-nav-btn active" data-nav="chart" aria-label="Chart">
+          <svg
+            aria-hidden="true"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M3 3v18h18" />
+            <path d="m19 9-5 5-4-4-3 3" />
+          </svg>
+          <span>Chart</span>
+        </button>
+        <button type="button" class="mobile-nav-btn" data-nav="search" aria-label="Search symbols">
+          <svg
+            aria-hidden="true"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <span>Search</span>
+        </button>
+        <button type="button" class="mobile-nav-btn" data-nav="watchlist" aria-label="Watchlist">
+          <svg
+            aria-hidden="true"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <line x1="8" y1="6" x2="21" y2="6" />
+            <line x1="8" y1="12" x2="21" y2="12" />
+            <line x1="8" y1="18" x2="21" y2="18" />
+            <line x1="3" y1="6" x2="3.01" y2="6" />
+            <line x1="3" y1="12" x2="3.01" y2="12" />
+            <line x1="3" y1="18" x2="3.01" y2="18" />
+          </svg>
+          <span>Watchlist</span>
+        </button>
+      </nav>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

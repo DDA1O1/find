@@ -6,7 +6,9 @@ export class HeaderComponent {
   private currentTicker: WatchlistTicker | null = null;
   private onToggleSidebar: () => void;
   private onFitChart: () => void;
+  private onOpenSearch?: () => void;
 
+  private symbolTriggerBtn!: HTMLButtonElement;
   private symbolTitleEl!: HTMLElement;
   private symbolSubtitleEl!: HTMLElement;
   private contractBadgeEl!: HTMLElement;
@@ -26,15 +28,23 @@ export class HeaderComponent {
   private boundFitChart: () => void;
   private boundToggleSidebar: () => void;
   private boundToggleFullscreen: () => void;
+  private boundOpenSearch: () => void;
 
-  constructor(container: HTMLElement, onToggleSidebar: () => void, onFitChart: () => void) {
+  constructor(
+    container: HTMLElement,
+    onToggleSidebar: () => void,
+    onFitChart: () => void,
+    onOpenSearch?: () => void,
+  ) {
     this.container = container;
     this.onToggleSidebar = onToggleSidebar;
     this.onFitChart = onFitChart;
+    this.onOpenSearch = onOpenSearch;
 
     this.boundFitChart = () => this.onFitChart();
     this.boundToggleSidebar = () => this.onToggleSidebar();
     this.boundToggleFullscreen = () => this.toggleFullscreen();
+    this.boundOpenSearch = () => this.onOpenSearch?.();
 
     this.render();
   }
@@ -56,13 +66,32 @@ export class HeaderComponent {
         <div class="divider"></div>
 
         <div class="active-sym-container">
-          <div class="active-sym-meta">
+          <button
+            type="button"
+            class="active-sym-meta active-sym-trigger"
+            id="hdr-symbol-trigger"
+            title="Search symbols"
+            aria-label="Search symbols"
+          >
             <div class="sym-name-group">
-              <h1 class="active-sym-title" id="hdr-symbol">BTCUSDT</h1>
+              <span class="active-sym-title" id="hdr-symbol">BTCUSDT</span>
               <span class="active-sym-subtitle" id="hdr-subtitle"></span>
             </div>
             <span class="contract-badge" id="hdr-badge">PERP</span>
-          </div>
+            <svg
+              class="sym-search-chevron"
+              aria-hidden="true"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+          </button>
           <div class="active-price-box">
             <span class="active-price" id="hdr-price">--</span>
             <span class="active-change" id="hdr-change">--</span>
@@ -91,8 +120,8 @@ export class HeaderComponent {
           <span class="status-text" id="hdr-status-text">Connecting...</span>
         </div>
 
-        <button class="hdr-btn" id="hdr-fit" title="Fit Chart (Auto Scale)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button class="hdr-btn" id="hdr-fit" title="Fit Chart (Auto Scale)" aria-label="Fit chart">
+          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="15 3 21 3 21 9"/>
             <polyline points="9 21 3 21 3 15"/>
             <line x1="21" y1="3" x2="14" y2="10"/>
@@ -101,14 +130,14 @@ export class HeaderComponent {
           <span>Fit</span>
         </button>
 
-        <button class="hdr-btn" id="hdr-fullscreen" title="Toggle Fullscreen">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button class="hdr-btn" id="hdr-fullscreen" title="Toggle Fullscreen" aria-label="Toggle fullscreen">
+          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
           </svg>
         </button>
 
-        <button class="hdr-btn toggle-sidebar-btn" id="hdr-toggle-sidebar" title="Toggle Watchlist">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button class="hdr-btn toggle-sidebar-btn" id="hdr-toggle-sidebar" title="Toggle Watchlist" aria-label="Toggle watchlist">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
             <line x1="15" y1="3" x2="15" y2="21"/>
           </svg>
@@ -116,6 +145,7 @@ export class HeaderComponent {
       </div>
     `;
 
+    this.symbolTriggerBtn = this.container.querySelector<HTMLButtonElement>("#hdr-symbol-trigger")!;
     this.symbolTitleEl = this.container.querySelector("#hdr-symbol")!;
     this.symbolSubtitleEl = this.container.querySelector("#hdr-subtitle")!;
     this.contractBadgeEl = this.container.querySelector("#hdr-badge")!;
@@ -132,12 +162,20 @@ export class HeaderComponent {
     this.fitBtn = this.container.querySelector<HTMLButtonElement>("#hdr-fit")!;
     this.toggleSidebarBtn = this.container.querySelector<HTMLButtonElement>("#hdr-toggle-sidebar")!;
 
+    if (typeof document !== "undefined" && !document.fullscreenEnabled) {
+      this.fullscreenBtn.style.display = "none";
+    }
+
+    this.symbolTriggerBtn.addEventListener("click", this.boundOpenSearch);
     this.fitBtn.addEventListener("click", this.boundFitChart);
     this.toggleSidebarBtn.addEventListener("click", this.boundToggleSidebar);
     this.fullscreenBtn.addEventListener("click", this.boundToggleFullscreen);
   }
 
   public destroy(): void {
+    if (this.symbolTriggerBtn) {
+      this.symbolTriggerBtn.removeEventListener("click", this.boundOpenSearch);
+    }
     if (this.fitBtn) this.fitBtn.removeEventListener("click", this.boundFitChart);
     if (this.toggleSidebarBtn) {
       this.toggleSidebarBtn.removeEventListener("click", this.boundToggleSidebar);

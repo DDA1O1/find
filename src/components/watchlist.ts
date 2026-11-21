@@ -11,10 +11,12 @@ export interface WatchlistOptions {
   initialFilter?: WatchlistFilter;
   initialSortCol?: WatchlistSortCol;
   initialSortDir?: WatchlistSortDir;
+  onCollapseChange?: (collapsed: boolean) => void;
 }
 
 const ROW_HEIGHT = 52; // px per row
 const OVERSCAN = 6; // rows above and below visible area
+const MOBILE_BREAKPOINT = 768;
 
 export class WatchlistComponent {
   private container: HTMLElement;
@@ -24,6 +26,7 @@ export class WatchlistComponent {
   private currentFilter: WatchlistFilter = "all";
   private searchQuery = "";
   private onSelectSymbol: (symbol: string) => void;
+  private onCollapseChange?: (collapsed: boolean) => void;
 
   private favorites: Set<string>;
 
@@ -83,11 +86,14 @@ export class WatchlistComponent {
     this.container = container;
     this.activeSymbol = initialActiveSymbol;
     this.onSelectSymbol = onSelectSymbol;
+    this.onCollapseChange = options.onCollapseChange;
 
     const validFilters: WatchlistFilter[] = ["all", "crypto", "tradifi", "favorites"];
-    this.currentFilter = validFilters.includes(options.initialFilter as WatchlistFilter)
+    const resolvedFilter = validFilters.includes(options.initialFilter as WatchlistFilter)
       ? (options.initialFilter as WatchlistFilter)
       : "all";
+    const isMobile = typeof window !== "undefined" && window.innerWidth <= MOBILE_BREAKPOINT;
+    this.currentFilter = isMobile && resolvedFilter === "favorites" ? "all" : resolvedFilter;
     this.sortCol = options.initialSortCol === "change" ? "change" : "volume";
     this.sortDir = options.initialSortDir === "asc" ? "asc" : "desc";
 
@@ -112,13 +118,19 @@ export class WatchlistComponent {
       <div class="watchlist-header">
         <div class="watchlist-title-row">
           <div class="watchlist-title">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 3v18h18"/>
               <path d="m19 9-5 5-4-4-3 3"/>
             </svg>
             <span id="wl-market-label">USDT-M Futures</span>
             <span class="badge" id="wl-count">0</span>
           </div>
+          <button type="button" class="wl-close-btn" id="wl-close" title="Close watchlist" aria-label="Close watchlist">
+            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
         </div>
 
         <div class="watchlist-search">
@@ -175,6 +187,12 @@ export class WatchlistComponent {
     this.tabsContainerEl = this.container.querySelector("#wl-tabs")!;
     this.clearBtn = this.container.querySelector<HTMLButtonElement>("#wl-clear")!;
     this.dragHandleEl = this.container.querySelector("#wl-drag-handle")!;
+
+    const closeBtn = this.container.querySelector<HTMLButtonElement>("#wl-close");
+    closeBtn?.addEventListener("click", () => {
+      this.container.classList.add("collapsed");
+      this.onCollapseChange?.(true);
+    });
 
     // D1: Debounced search input handler (70ms)
     this.searchInput.addEventListener("input", () => {
@@ -265,12 +283,25 @@ export class WatchlistComponent {
     });
   }
 
+  public ensureMobileFilter(): void {
+    if (typeof window === "undefined" || window.innerWidth > MOBILE_BREAKPOINT) return;
+    if (this.currentFilter !== "favorites") return;
+
+    this.currentFilter = "all";
+    const tabs = this.tabsContainerEl.querySelectorAll<HTMLButtonElement>(".wl-tab");
+    tabs.forEach((tab) => {
+      tab.classList.toggle("active", tab.dataset.filter === "all");
+    });
+    this.filterAndSort();
+    this.renderVirtual(true);
+  }
+
   /* ======================================================================== *
    *  A7: Responsive Mobile Bottom Sheet Swipe Gestures
    * ======================================================================== */
 
   private handleTouchStart(e: TouchEvent): void {
-    if (window.innerWidth > 640) return;
+    if (window.innerWidth > MOBILE_BREAKPOINT) return;
     this.isDraggingSheet = true;
     this.touchStartY = e.touches[0].clientY;
     this.touchCurrentY = this.touchStartY;
@@ -278,7 +309,7 @@ export class WatchlistComponent {
   }
 
   private handleTouchMove(e: TouchEvent): void {
-    if (!this.isDraggingSheet || window.innerWidth > 640) return;
+    if (!this.isDraggingSheet || window.innerWidth > MOBILE_BREAKPOINT) return;
     this.touchCurrentY = e.touches[0].clientY;
     const deltaY = this.touchCurrentY - this.touchStartY;
 
@@ -290,7 +321,7 @@ export class WatchlistComponent {
   }
 
   private handleTouchEnd(): void {
-    if (!this.isDraggingSheet || window.innerWidth > 640) return;
+    if (!this.isDraggingSheet || window.innerWidth > MOBILE_BREAKPOINT) return;
     this.isDraggingSheet = false;
     this.container.style.transition = "";
 
@@ -299,6 +330,7 @@ export class WatchlistComponent {
       // Swiped down sufficiently -> collapse sheet
       this.container.classList.add("collapsed");
       this.container.style.transform = "";
+      this.onCollapseChange?.(true);
     } else {
       // Snap back to open
       this.container.style.transform = "";

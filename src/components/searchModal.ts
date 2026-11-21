@@ -20,9 +20,11 @@ export class SearchModalComponent {
   private isOpen = false;
 
   private onSelect: (symbol: string) => void;
+  private onVisibilityChange?: (isOpen: boolean) => void;
 
-  constructor(onSelect: (symbol: string) => void) {
+  constructor(onSelect: (symbol: string) => void, onVisibilityChange?: (isOpen: boolean) => void) {
     this.onSelect = onSelect;
+    this.onVisibilityChange = onVisibilityChange;
     this.createDOM();
     this.bindEvents();
   }
@@ -42,19 +44,20 @@ export class SearchModalComponent {
     this.modal.innerHTML = `
       <div class="search-modal-header">
         <div class="search-modal-input-wrap">
-          <svg class="search-modal-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg aria-hidden="true" class="search-modal-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"/>
             <path d="m21 21-4.3-4.3"/>
           </svg>
           <input
             type="text"
             class="search-modal-input"
-            placeholder="Search symbol, e.g. BTC, ETH, SOL…"
+            placeholder="Search symbol, e.g. BTC, ETH, NVDA…"
             spellcheck="false"
             autocomplete="off"
           />
           <kbd class="search-modal-kbd">ESC</kbd>
         </div>
+        <button type="button" class="search-modal-cancel" aria-label="Close search">Cancel</button>
       </div>
       <div class="search-modal-body">
         <div class="search-modal-meta">
@@ -93,6 +96,11 @@ export class SearchModalComponent {
       if (e.target === this.overlay) {
         this.close();
       }
+    });
+
+    const cancelBtn = this.modal.querySelector<HTMLButtonElement>(".search-modal-cancel");
+    cancelBtn?.addEventListener("click", () => {
+      this.close();
     });
 
     // Search input handler
@@ -143,6 +151,7 @@ export class SearchModalComponent {
   public open(initialChar?: string): void {
     if (this.isOpen) return;
     this.isOpen = true;
+    this.onVisibilityChange?.(true);
 
     this.overlay.style.display = "flex";
     // Trigger enter animation next frame
@@ -163,6 +172,7 @@ export class SearchModalComponent {
   public close(): void {
     if (!this.isOpen) return;
     this.isOpen = false;
+    this.onVisibilityChange?.(false);
 
     this.overlay.classList.remove("visible");
 

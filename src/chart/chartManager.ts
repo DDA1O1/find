@@ -6,6 +6,7 @@ import {
   AreaSeries,
   ColorType,
   CrosshairMode,
+  TrackingModeExitMode,
   type IChartApi,
   type ISeriesApi,
   type UTCTimestamp,
@@ -82,6 +83,9 @@ export class ChartManager {
   };
 
   private resizeObserver: ResizeObserver | null = null;
+  private mobileQuery: MediaQueryList | null = null;
+  private isMobileLayout = false;
+  private mobileQueryListener?: (e: MediaQueryListEvent) => void;
   private onLegendUpdate?: (data: { candle: CandleData | null; isHovered: boolean }) => void;
   private isHovering = false;
   private hoveredCandle: CandleData | null = null;
@@ -99,6 +103,11 @@ export class ChartManager {
     this.onLegendUpdate = onLegendUpdate;
     this.eventTooltipEl =
       this.container.parentElement?.querySelector<HTMLElement>("#chart-event-tooltip") ?? null;
+
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+      this.mobileQuery = window.matchMedia("(max-width: 768px)");
+      this.isMobileLayout = this.mobileQuery.matches;
+    }
 
     this.chart = createChart(container, {
       layout: {
@@ -130,16 +139,15 @@ export class ChartManager {
         borderColor: "rgba(255, 255, 255, 0.06)",
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 12,
-        barSpacing: 8,
+        rightOffset: this.isMobileLayout ? 6 : 12,
+        barSpacing: this.isMobileLayout ? 6 : 8,
         minBarSpacing: 2,
       },
       rightPriceScale: {
         borderColor: "rgba(255, 255, 255, 0.06)",
-        scaleMargins: {
-          top: 0.1,
-          bottom: 0.24, // leave room for volume & corporate events rail
-        },
+        scaleMargins: this.isMobileLayout
+          ? { top: 0.08, bottom: 0.18 }
+          : { top: 0.1, bottom: 0.24 },
         alignLabels: true,
       },
       handleScale: {
@@ -152,6 +160,13 @@ export class ChartManager {
         pressedMouseMove: true,
         horzTouchDrag: true,
         vertTouchDrag: true,
+      },
+      kineticScroll: {
+        touch: true,
+        mouse: false,
+      },
+      trackingMode: {
+        exitMode: TrackingModeExitMode.OnTouchEnd,
       },
     });
 
@@ -178,14 +193,12 @@ export class ChartManager {
     });
 
     this.chart.priceScale("volume").applyOptions({
-      scaleMargins: {
-        top: 0.78,
-        bottom: 0.055,
-      },
+      scaleMargins: this.isMobileLayout ? { top: 0.82, bottom: 0 } : { top: 0.78, bottom: 0.055 },
     });
 
-    // TradingView-style Split & Dividend badges along bottom rail of volume pane
+    // TradingView-style Split & Dividend badges along bottom rail of volume pane (desktop only)
     this.corporateEventsPrimitive = new CorporateEventsPrimitive();
+    this.corporateEventsPrimitive.setVisible(this.shouldShowCorporateEvents());
     this.chart.panes()[0]?.attachPrimitive(this.corporateEventsPrimitive);
 
     // Initialize C4: Worker indicator service
@@ -196,6 +209,42 @@ export class ChartManager {
     this.setupResizeHandler();
     this.setupCrosshairHandler();
     this.setupEventInteractions();
+    this.setupResponsiveLayoutListener();
+  }
+
+  private shouldShowCorporateEvents(): boolean {
+    return !this.isMobileLayout && this.indicatorSettings.corporateEvents;
+  }
+
+  private setupResponsiveLayoutListener(): void {
+    if (!this.mobileQuery) return;
+    this.mobileQueryListener = (e: MediaQueryListEvent) => {
+      this.isMobileLayout = e.matches;
+      this.applyResponsiveChartOptions();
+    };
+    this.mobileQuery.addEventListener("change", this.mobileQueryListener);
+  }
+
+  private applyResponsiveChartOptions(): void {
+    this.chart.timeScale().applyOptions({
+      rightOffset: this.isMobileLayout ? 6 : 12,
+      barSpacing: this.isMobileLayout ? 6 : 8,
+    });
+    this.chart.priceScale("right").applyOptions({
+      scaleMargins: this.isMobileLayout ? { top: 0.08, bottom: 0.18 } : { top: 0.1, bottom: 0.24 },
+    });
+    this.chart.priceScale("volume").applyOptions({
+      scaleMargins: this.isMobileLayout ? { top: 0.82, bottom: 0 } : { top: 0.78, bottom: 0.055 },
+    });
+
+    const showEvents = this.shouldShowCorporateEvents();
+    this.corporateEventsPrimitive.setVisible(showEvents);
+    if (!showEvents) {
+      this.hoveredEventId = null;
+      this.pinnedEventId = null;
+      this.corporateEventsPrimitive.setActiveIds(null, null);
+      this.refreshEventTooltip();
+    }
   }
 
   private setupResizeHandler(): void {
@@ -281,7 +330,7 @@ export class ChartManager {
 
   private setupEventInteractions(): void {
     const clickHandler = (param: MouseEventParams) => {
-      if (!this.indicatorSettings.corporateEvents) return;
+      if (!this.shouldShowCorporateEvents()) return;
 
       let clickedId =
         param.hoveredInfo?.sourceKind === "pane-primitive" &&
@@ -330,7 +379,7 @@ export class ChartManager {
   }
 
   private updateHoveredEvent(hoveredId: string | null): void {
-    const nextHovered = this.indicatorSettings.corporateEvents ? hoveredId : null;
+    const nextHovered = this.shouldShowCorporateEvents() ? hoveredId : null;
     if (this.hoveredEventId === nextHovered) return;
     this.hoveredEventId = nextHovered;
     this.corporateEventsPrimitive.setActiveIds(this.hoveredEventId, this.pinnedEventId);
@@ -342,7 +391,7 @@ export class ChartManager {
     if (!el) return;
 
     const activeId = this.hoveredEventId ?? this.pinnedEventId;
-    if (!activeId || !this.indicatorSettings.corporateEvents) {
+    if (!activeId || !this.shouldShowCorporateEvents()) {
       el.style.display = "none";
       el.classList.remove("pinned");
       return;
@@ -835,8 +884,9 @@ export class ChartManager {
       );
     }
 
-    this.corporateEventsPrimitive.setVisible(this.indicatorSettings.corporateEvents);
-    if (!this.indicatorSettings.corporateEvents) {
+    const showEvents = this.shouldShowCorporateEvents();
+    this.corporateEventsPrimitive.setVisible(showEvents);
+    if (!showEvents) {
       this.hoveredEventId = null;
       this.pinnedEventId = null;
       this.corporateEventsPrimitive.setActiveIds(null, null);
@@ -859,6 +909,10 @@ export class ChartManager {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
+    }
+    if (this.mobileQuery && this.mobileQueryListener) {
+      this.mobileQuery.removeEventListener("change", this.mobileQueryListener);
+      this.mobileQueryListener = undefined;
     }
     if (this.crosshairUnsub) {
       this.crosshairUnsub();
