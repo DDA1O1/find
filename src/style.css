@@ -103,8 +103,65 @@ input {
 }
 
 /* ==========================================================================
-   Header Component
+   Top Chrome & Discipline Banner
    ========================================================================== */
+.app-top {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+.discipline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 1.625rem;
+  padding: 0.2rem 0.75rem;
+  background: linear-gradient(
+    90deg,
+    rgba(245, 158, 11, 0.1) 0%,
+    rgba(13, 17, 26, 0.96) 28%,
+    rgba(13, 17, 26, 0.96) 72%,
+    rgba(59, 130, 246, 0.1) 100%
+  );
+  border-bottom: 1px solid rgba(245, 158, 11, 0.22);
+  text-align: center;
+}
+
+.discipline-banner-text {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+}
+
+.discipline-banner-text strong {
+  font-weight: 700;
+}
+
+.discipline-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.25;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  flex-shrink: 0;
+}
+
 .app-header {
   height: var(--header-height);
   background: rgba(13, 17, 26, 0.88);
@@ -116,7 +173,6 @@ input {
   justify-content: space-between;
   padding: 0 16px;
   user-select: none;
-  z-index: 20;
 }
 
 .header-left {
@@ -1801,10 +1857,20 @@ span.neg {
    Minimal navigation: Chart + Search + Watchlist
    ============================================================ */
 @media (max-width: 768px) {
+  .discipline-banner {
+    padding: max(4px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) 4px
+      max(10px, env(safe-area-inset-left, 0px));
+  }
+
+  .discipline-banner-text {
+    font-size: 0.7rem;
+    gap: 0.15rem 0.4rem;
+  }
+
   .app-header {
     height: auto;
     min-block-size: 52px;
-    padding: max(6px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) 6px
+    padding: 6px max(10px, env(safe-area-inset-right, 0px)) 6px
       max(10px, env(safe-area-inset-left, 0px));
     gap: 8px;
   }
