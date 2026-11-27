@@ -1,21 +1,22 @@
 export function formatPrice(price: number): string {
   if (isNaN(price)) return "0.00";
-  if (price >= 1000) {
+  const abs = Math.abs(price);
+  if (abs >= 1000) {
     return price.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
   }
-  if (price >= 1) {
+  if (abs >= 1) {
     return price.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 4,
     });
   }
-  if (price >= 0.01) {
+  if (abs >= 0.01) {
     return price.toFixed(4);
   }
-  if (price >= 0.0001) {
+  if (abs >= 0.0001) {
     return price.toFixed(6);
   }
   return price.toFixed(8);

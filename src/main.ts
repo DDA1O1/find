@@ -14,9 +14,15 @@ import { isUsEquityYahooSymbol, resolveStaticYahooSymbol } from "./api/yahooSymb
 import { WatchlistComponent, type WatchlistFilter } from "./components/watchlist";
 import { HeaderComponent } from "./components/header";
 import { ToolbarComponent } from "./components/toolbar";
+import { RelativityHudComponent } from "./components/relativityHud";
 import { SearchModalComponent } from "./components/searchModal";
 import { ToastComponent } from "./components/toast";
 import { OfflineBannerComponent } from "./components/offlineBanner";
+import {
+  calculateRollingRelativity,
+  DEFAULT_RELATIVITY_WINDOW,
+  resolveDefaultBenchmark,
+} from "./indicators/relativity";
 import { eventBus } from "./core/eventBus";
 import { stateManager } from "./core/stateManager";
 
@@ -27,6 +33,7 @@ export class App {
 
   private header!: HeaderComponent;
   private toolbar!: ToolbarComponent;
+  private relativityHud!: RelativityHudComponent;
   private watchlist!: WatchlistComponent;
   private searchModal!: SearchModalComponent;
   private toast!: ToastComponent;
@@ -43,6 +50,8 @@ export class App {
   private unbindMobileListeners?: () => void;
   private eventBusUnsubs: Array<() => void> = [];
   private loadSeq = 0;
+  private relativitySeq = 0;
+  private customBenchmarks = new Map<string, string>();
   private loadedSymbol: string | null = null;
   private loadedInterval: Timeframe | null = null;
   private isDestroyed = false;
@@ -73,8 +82,21 @@ export class App {
     const chartContainer = document.getElementById("chart-container")!;
     this.chartManager = new ChartManager(chartContainer, ({ candle, isHovered }) => {
       this.toolbar.updateLegend(stateManager.activeSymbol, candle, isHovered);
+      this.relativityHud?.updateForTimestamp(candle ? candle.time : null, isHovered);
     });
     this.chartManager.setIndicators(stateManager.indicators);
+
+    // 2b. Initialize 100D Relativity HUD (Correlation & Beta below legend pill)
+    const relativityEl = document.getElementById("chart-relativity")!;
+    this.relativityHud = new RelativityHudComponent(relativityEl, (customBenchmarkSymbol) => {
+      const activeSym = stateManager.activeSymbol;
+      if (customBenchmarkSymbol) {
+        this.customBenchmarks.set(activeSym, customBenchmarkSymbol);
+      } else {
+        this.customBenchmarks.delete(activeSym);
+      }
+      void this.loadRelativity(activeSym);
+    });
 
     // 3. Initialize Toolbar
     const toolbarEl = document.getElementById("app-toolbar")!;
@@ -153,6 +175,7 @@ export class App {
         }
 
         this.startKlineSocket();
+        void this.loadRelativity(symbol);
         await this.loadCandles(symbol, stateManager.activeTimeframe);
       }),
     );
@@ -365,6 +388,7 @@ export class App {
       const tickers = await fetchFutures24hTickers();
 
       stateManager.setAllTickers(tickers);
+      this.relativityHud.setTickers(stateManager.allTickers);
       this.watchlist.setTickers(tickers);
       this.watchlist.setActiveSymbol(stateManager.activeSymbol);
 
@@ -376,7 +400,8 @@ export class App {
       // Start all tickers socket to stream real-time prices for watchlist (D2 RAF batched)
       this.startAllTickersSocket();
 
-      // Load initial candles
+      // Load initial candles & 100D correlation/beta
+      void this.loadRelativity(stateManager.activeSymbol);
       await this.loadCandles(stateManager.activeSymbol, stateManager.activeTimeframe);
 
       // Start live kline socket
@@ -417,6 +442,7 @@ export class App {
         for (const sym of removed) {
           stateManager.allTickers.delete(sym);
         }
+        this.relativityHud.setTickers(stateManager.allTickers);
 
         for (const sym of [...added, ...upgradedTradFi]) {
           candleCache.invalidate(sym);
@@ -450,6 +476,57 @@ export class App {
         console.warn("[Binance Catalog] Auto-sync failed:", err);
       }
     }, 120000);
+  }
+
+  private async loadRelativity(symbol: string): Promise<void> {
+    const seq = ++this.relativitySeq;
+    const defaultChoice = resolveDefaultBenchmark(symbol);
+    const customSym = this.customBenchmarks.get(symbol);
+    const isCustom = Boolean(
+      customSym && customSym !== defaultChoice.symbol && customSym !== symbol,
+    );
+    const benchmarkSymbol = isCustom && customSym ? customSym : defaultChoice.symbol;
+    const benchmarkReason = isCustom ? "Custom Benchmark" : defaultChoice.reason;
+
+    this.relativityHud.setLoading(symbol, benchmarkSymbol, benchmarkReason, isCustom);
+
+    try {
+      const [assetRes, benchRes] = await Promise.all([
+        candleCache.getOrFetch(symbol, "1d", 500),
+        candleCache.getOrFetch(benchmarkSymbol, "1d", 500),
+      ]);
+
+      if (this.isDestroyed || seq !== this.relativitySeq) return;
+
+      const points = calculateRollingRelativity(
+        assetRes.candles,
+        benchRes.candles,
+        DEFAULT_RELATIVITY_WINDOW,
+      );
+
+      this.relativityHud.setSeries(
+        {
+          assetSymbol: symbol,
+          benchmarkSymbol,
+          benchmarkReason,
+          points,
+          latest: points.length > 0 ? points[points.length - 1] : null,
+        },
+        isCustom,
+      );
+    } catch {
+      if (this.isDestroyed || seq !== this.relativitySeq) return;
+      this.relativityHud.setSeries(
+        {
+          assetSymbol: symbol,
+          benchmarkSymbol,
+          benchmarkReason,
+          points: [],
+          latest: null,
+        },
+        isCustom,
+      );
+    }
   }
 
   private applyDiscoveredStockName(symbol: string, meta?: StockQuoteMeta): void {
@@ -673,6 +750,7 @@ export class App {
     this.chartManager?.destroy();
     this.header?.destroy();
     this.toolbar?.destroy();
+    this.relativityHud?.destroy();
     this.watchlist?.destroy();
     this.searchModal?.destroy();
     this.offlineBanner?.destroy();

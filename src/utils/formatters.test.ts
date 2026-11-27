@@ -17,6 +17,12 @@ describe("formatPrice", () => {
     expect(formatPrice(0.00001234)).toBe("0.00001234");
   });
 
+  it("formats negative price deltas without trailing 8-decimal zeros", () => {
+    expect(formatPrice(-2.52)).toBe("-2.52");
+    expect(formatPrice(-1234.5)).toBe("-1,234.50");
+    expect(formatPrice(-0.0456)).toBe("-0.0456");
+  });
+
   it("handles NaN gracefully", () => {
     expect(formatPrice(NaN)).toBe("0.00");
   });
