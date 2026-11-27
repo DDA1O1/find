@@ -698,44 +698,53 @@ export class ChartManager {
    * Real-time update from WebSocket
    */
   public updateCandle(candle: CandleData, isClosed: boolean): void {
+    const liveCandle: CandleData = candle.source ? candle : { ...candle, source: "binance" };
+
     if (this.candles.length === 0) {
-      this.setData([candle]);
+      this.setData([liveCandle]);
       return;
     }
 
     const lastIdx = this.candles.length - 1;
     const last = this.candles[lastIdx];
-    const pushedNewBar = candle.time > last.time;
 
-    if (candle.time === last.time) {
-      this.candles[lastIdx] = candle;
+    // Guard against stale or out-of-order WS ticks which would throw in Lightweight Charts
+    if (liveCandle.time < last.time) {
+      return;
+    }
+
+    const pushedNewBar = liveCandle.time > last.time;
+
+    if (liveCandle.time === last.time) {
+      this.candles[lastIdx] = liveCandle;
     } else if (pushedNewBar) {
-      this.candles.push(candle);
+      this.candles.push(liveCandle);
     }
 
     this._candlesMapCache = null;
 
     const formattedCandle = {
-      time: candle.time as UTCTimestamp,
-      open: candle.open,
-      high: candle.high,
-      low: candle.low,
-      close: candle.close,
+      time: liveCandle.time as UTCTimestamp,
+      open: liveCandle.open,
+      high: liveCandle.high,
+      low: liveCandle.low,
+      close: liveCandle.close,
     };
 
     if (this.currentChartType === "candles") {
       this.candleSeries.update(formattedCandle);
     } else if (this.currentChartType === "line" && this.lineSeries) {
-      this.lineSeries.update({ time: candle.time as UTCTimestamp, value: candle.close });
+      this.lineSeries.update({ time: liveCandle.time as UTCTimestamp, value: liveCandle.close });
     } else if (this.currentChartType === "area" && this.areaSeries) {
-      this.areaSeries.update({ time: candle.time as UTCTimestamp, value: candle.close });
+      this.areaSeries.update({ time: liveCandle.time as UTCTimestamp, value: liveCandle.close });
     }
 
     if (this.indicatorSettings.volume) {
       this.volumeSeries.update({
-        time: candle.time as UTCTimestamp,
-        value: candle.volume,
-        color: candle.close >= candle.open ? "rgba(8, 153, 129, 0.4)" : "rgba(242, 54, 69, 0.4)",
+        time: liveCandle.time as UTCTimestamp,
+        value: liveCandle.volume,
+        color:
+          liveCandle.close >= liveCandle.open ? "rgba(8, 153, 129, 0.4)" : "rgba(242, 54, 69, 0.4)",
       });
     }
 
@@ -753,12 +762,12 @@ export class ChartManager {
 
     if (this.onLegendUpdate) {
       if (this.isHovering) {
-        if (this.hoveredCandle && this.hoveredCandle.time === candle.time) {
-          this.hoveredCandle = candle;
-          this.onLegendUpdate({ candle, isHovered: true });
+        if (this.hoveredCandle && this.hoveredCandle.time === liveCandle.time) {
+          this.hoveredCandle = liveCandle;
+          this.onLegendUpdate({ candle: liveCandle, isHovered: true });
         }
       } else {
-        this.onLegendUpdate({ candle, isHovered: false });
+        this.onLegendUpdate({ candle: liveCandle, isHovered: false });
       }
     }
   }

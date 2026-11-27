@@ -549,7 +549,11 @@ export class WatchlistComponent {
     this.ensureSymbolVisible(this.activeSymbol);
   }
 
-  public syncTickers(freshTickers: WatchlistTicker[]): { added: string[]; removed: string[] } {
+  public syncTickers(freshTickers: WatchlistTicker[]): {
+    added: string[];
+    removed: string[];
+    upgradedTradFi: string[];
+  } {
     const freshMap = new Map<string, WatchlistTicker>();
     for (const t of freshTickers) {
       t.isFavorite = this.favorites.has(t.symbol);
@@ -558,6 +562,8 @@ export class WatchlistComponent {
 
     const added: string[] = [];
     const removed: string[] = [];
+    const upgradedTradFi: string[] = [];
+    let metadataChanged = false;
 
     for (const [symbol, fresh] of freshMap) {
       if (!this.tickers.has(symbol)) {
@@ -565,6 +571,23 @@ export class WatchlistComponent {
         this.tickers.set(symbol, fresh);
       } else {
         const current = this.tickers.get(symbol)!;
+        if (
+          current.contractType !== "TRADIFI_PERPETUAL" &&
+          fresh.contractType === "TRADIFI_PERPETUAL"
+        ) {
+          upgradedTradFi.push(symbol);
+          metadataChanged = true;
+        }
+        current.contractType = fresh.contractType;
+        if (fresh.underlyingType) current.underlyingType = fresh.underlyingType;
+        if (fresh.name && !current.name) {
+          current.name = fresh.name;
+          metadataChanged = true;
+        }
+        if (fresh.industry && !current.industry) {
+          current.industry = fresh.industry;
+          metadataChanged = true;
+        }
         current.price = fresh.price;
         current.change24h = fresh.change24h;
         current.high24h = fresh.high24h;
@@ -581,12 +604,21 @@ export class WatchlistComponent {
       }
     }
 
-    if (added.length > 0 || removed.length > 0) {
+    if (added.length > 0 || removed.length > 0 || metadataChanged) {
       this.filterAndSort();
       this.renderVirtual(true);
     }
 
-    return { added, removed };
+    return { added, removed, upgradedTradFi };
+  }
+
+  public updateTickerName(symbol: string, name: string): void {
+    const ticker = this.tickers.get(symbol);
+    if (!ticker || ticker.name || !name.trim()) return;
+    ticker.name = name.trim();
+    if (this.renderedRows.has(symbol)) {
+      this.renderVirtual(true);
+    }
   }
 
   public setActiveSymbol(symbol: string): void {

@@ -15,7 +15,14 @@ export interface StockQuoteMeta {
   regularMarketDayLow: number;
   regularMarketVolume: number;
   currency: string;
+  originalCurrency?: string;
   exchangeName: string;
+}
+
+export interface FetchStockCandlesOptions {
+  range?: string;
+  underlyingType?: string;
+  refPrice?: number;
 }
 
 export interface StockCandleResponse {
@@ -339,11 +346,31 @@ export async function fetchStockEvents(symbol: string): Promise<CorporateEventsD
 export async function fetchStockCandles(
   symbol: string,
   timeframe: Timeframe,
-  range?: string,
+  rangeOrOptions?: string | FetchStockCandlesOptions,
 ): Promise<StockCandleResponse> {
   const cleanSymbol = symbol.trim().toUpperCase();
-  const rangeQuery = range ? `&range=${encodeURIComponent(range)}` : "";
-  const url = `/api/stock-candles?symbol=${encodeURIComponent(cleanSymbol)}&interval=${timeframe}${rangeQuery}`;
+  const options: FetchStockCandlesOptions =
+    typeof rangeOrOptions === "string" ? { range: rangeOrOptions } : rangeOrOptions || {};
+
+  const params = new URLSearchParams({
+    symbol: cleanSymbol,
+    interval: timeframe,
+  });
+  if (options.range) {
+    params.set("range", options.range);
+  }
+  if (options.underlyingType) {
+    params.set("underlyingType", options.underlyingType);
+  }
+  if (
+    typeof options.refPrice === "number" &&
+    Number.isFinite(options.refPrice) &&
+    options.refPrice > 0
+  ) {
+    params.set("refPrice", String(options.refPrice));
+  }
+
+  const url = `/api/stock-candles?${params.toString()}`;
 
   const res = await fetch(url);
   if (!res.ok) {

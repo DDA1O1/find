@@ -4,9 +4,12 @@ import {
   getUnderlyingStockSymbol,
   getTradFiStockName,
   getTradFiIndustry,
+  getTradFiUnderlyingType,
+  getTradFiRefPrice,
   normalizeCandleTime,
   mergeHistoricalCandles,
   registerTradFiPerpetualSymbol,
+  registerTradFiStockName,
 } from "./tradifiPairs";
 import type { CandleData } from "../types";
 
@@ -26,10 +29,22 @@ describe("TradFi Pairs & Chart Splicing", () => {
     expect(isTradFiFuturesSymbol("APTUSDT")).toBe(false);
   });
 
-  it("recognizes explicitly flagged TRADIFI_PERPETUAL contracts", () => {
+  it("recognizes explicitly flagged TRADIFI_PERPETUAL contracts and stores dynamic metadata", () => {
     expect(isTradFiFuturesSymbol("CUSTOMPAIRUSDT", "TRADIFI_PERPETUAL")).toBe(true);
-    registerTradFiPerpetualSymbol("NEWTRADIFIUSDT");
+    registerTradFiPerpetualSymbol("NEWTRADIFIUSDT", "HK_EQUITY", 12.34);
     expect(isTradFiFuturesSymbol("NEWTRADIFIUSDT")).toBe(true);
+    expect(getTradFiUnderlyingType("NEWTRADIFIUSDT")).toBe("HK_EQUITY");
+    expect(getTradFiRefPrice("NEWTRADIFIUSDT")).toBe(12.34);
+
+    registerTradFiStockName("NEWTRADIFI", "New TradFi Corp.");
+    expect(getTradFiStockName("NEWTRADIFI")).toBe("New TradFi Corp.");
+
+    // Newly listed Xiaomi & regional HK/JP contracts are recognized automatically
+    expect(isTradFiFuturesSymbol("XIAOMIUSDT")).toBe(true);
+    expect(isTradFiFuturesSymbol("HK1888USDT")).toBe(true);
+    expect(isTradFiFuturesSymbol("HK9988USDT")).toBe(true);
+    expect(getUnderlyingStockSymbol("XIAOMIUSDT")).toBe("XIAOMI");
+    expect(getUnderlyingStockSymbol("HK9988USDT")).toBe("HK9988");
   });
 
   it("extracts underlying stock symbols correctly", () => {

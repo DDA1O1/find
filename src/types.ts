@@ -22,6 +22,7 @@ export interface WatchlistTicker {
   baseAsset: string;
   quoteAsset: string;
   contractType?: string;
+  underlyingType?: string;
   name?: string;
   industry?: string;
   price: number;

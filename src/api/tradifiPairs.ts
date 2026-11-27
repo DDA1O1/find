@@ -25,6 +25,7 @@ export const POPULAR_TRADIFI_STOCKS: Record<string, string> = {
   XLE: "Energy Select Sector SPDR Fund",
   EQT: "EQT Corporation",
   URNM: "Sprott Uranium Miners ETF",
+  CCJ: "Cameco Corporation",
   NEE: "NextEra Energy, Inc.",
   CEG: "Constellation Energy Corp.",
   VST: "Vistra Corp.",
@@ -94,6 +95,8 @@ export const POPULAR_TRADIFI_STOCKS: Record<string, string> = {
   HK0700: "Tencent Holdings Ltd.",
   TENCENT: "Tencent Holdings Ltd.",
   HK1810: "Xiaomi Corporation",
+  XIAOMI: "Xiaomi Corporation",
+  HK1888: "Kingboard Laminates Holdings",
   HK0992: "Lenovo Group Limited",
   NAVER: "Naver Corporation",
   GLW: "Corning Incorporated",
@@ -121,6 +124,7 @@ export const POPULAR_TRADIFI_STOCKS: Record<string, string> = {
   APP: "AppLovin Corporation",
   OPENAI: "OpenAI (Pre-IPO Synthetic)",
   ANTHROPIC: "Anthropic (Pre-IPO Synthetic)",
+  ANT: "Anthropic, PBC",
   MINIMAX: "MiniMax AI (Synthetic)",
   ZHIPU: "Zhipu AI (Synthetic)",
   MOONSHOT: "Moonshot AI (Synthetic)",
@@ -143,6 +147,7 @@ export const POPULAR_TRADIFI_STOCKS: Record<string, string> = {
   BNC: "Binance Ecosystem Token",
   ZCSH: "Zcash Synthetic",
   BITO: "ProShares Bitcoin Strategy ETF",
+  IBIT: "iShares Bitcoin Trust ETF",
   BA: "The Boeing Company",
   RTX: "RTX Corporation",
   SPCX: "SpaceX (Pre-IPO Synthetic)",
@@ -157,6 +162,7 @@ export const POPULAR_TRADIFI_STOCKS: Record<string, string> = {
   STRC: "Sarcos Technology and Robotics",
   TSLA: "Tesla, Inc.",
   RIVN: "Rivian Automotive, Inc.",
+  NIO: "NIO Inc.",
   BYD: "BYD Company Limited",
   UBER: "Uber Technologies, Inc.",
   HYUNDAI: "Hyundai Motor Company",
@@ -251,6 +257,7 @@ export const POPULAR_TRADIFI_STOCKS: Record<string, string> = {
   MW: "Leverage 2x Micron ETF",
   MUU: "Leverage 2x Micron ETF",
   NVDL: "Leverage 2x NVIDIA ETF",
+  AMDL: "Leverage 2x AMD ETF",
   TSLL: "Leverage 2x Tesla ETF",
   MSTU: "Leverage 2x MicroStrategy ETF",
   CSOPSAMSUNG2L: "Leverage 2x Samsung ETF",
@@ -274,6 +281,8 @@ export const POPULAR_TRADIFI_STOCKS: Record<string, string> = {
   VOO: "Vanguard S&P 500 ETF",
   TLT: "iShares 20+ Year Treasury Bond ETF",
   ARKK: "ARK Innovation ETF",
+  IGV: "iShares Expanded Tech-Software ETF",
+  ARTY: "iShares Future AI & Tech ETF",
   XLF: "Financial Select Sector SPDR Fund",
   XLK: "Technology Select Sector SPDR Fund",
   XBI: "SPDR S&P Biotech ETF",
@@ -416,12 +425,59 @@ export const CRYPTO_NATIVE_SYMBOLS = new Set([
 ]);
 
 /**
- * Dynamic set of confirmed TradFi perpetual symbols discovered from exchangeInfo
+ * Dynamic metadata for confirmed TradFi perpetual symbols discovered from exchangeInfo.
  */
-const dynamicTradFiSymbols = new Set<string>();
+interface DynamicTradFiMeta {
+  underlyingType?: string;
+  refPrice?: number;
+}
 
-export function registerTradFiPerpetualSymbol(symbol: string): void {
-  dynamicTradFiSymbols.add(symbol.toUpperCase());
+const dynamicTradFiSymbols = new Map<string, DynamicTradFiMeta>();
+const dynamicStockNames = new Map<string, string>();
+
+const REGIONAL_EQUITY_BASE_REGEX = /^(HK|KR|JP|TW|CN)\d{4,6}$/;
+
+export function registerTradFiPerpetualSymbol(
+  symbol: string,
+  underlyingType?: string,
+  refPrice?: number,
+): void {
+  const upper = symbol.trim().toUpperCase();
+  if (!upper) return;
+  const existing = dynamicTradFiSymbols.get(upper) || {};
+  dynamicTradFiSymbols.set(upper, {
+    underlyingType: underlyingType?.trim().toUpperCase() || existing.underlyingType,
+    refPrice:
+      typeof refPrice === "number" && Number.isFinite(refPrice) && refPrice > 0
+        ? refPrice
+        : existing.refPrice,
+  });
+}
+
+export function setTradFiRefPrice(symbol: string, price: number): void {
+  const upper = symbol.trim().toUpperCase();
+  if (!upper || !Number.isFinite(price) || price <= 0) return;
+  const existing = dynamicTradFiSymbols.get(upper);
+  if (existing) {
+    existing.refPrice = price;
+  } else if (isTradFiFuturesSymbol(upper)) {
+    dynamicTradFiSymbols.set(upper, { refPrice: price });
+  }
+}
+
+export function getTradFiUnderlyingType(symbol: string): string | undefined {
+  return dynamicTradFiSymbols.get(symbol.trim().toUpperCase())?.underlyingType;
+}
+
+export function getTradFiRefPrice(symbol: string): number | undefined {
+  return dynamicTradFiSymbols.get(symbol.trim().toUpperCase())?.refPrice;
+}
+
+export function registerTradFiStockName(stockSymbol: string, name: string): void {
+  const cleanSym = stockSymbol.trim().toUpperCase();
+  const cleanName = name.trim();
+  if (!cleanSym || !cleanName || cleanSym in POPULAR_TRADIFI_STOCKS) return;
+  dynamicStockNames.set(cleanSym, cleanName);
 }
 
 /**
@@ -439,7 +495,7 @@ export function isTradFiFuturesSymbol(symbol: string, contractType?: string): bo
   if (CRYPTO_NATIVE_SYMBOLS.has(base)) {
     return false;
   }
-  return base in POPULAR_TRADIFI_STOCKS;
+  return base in POPULAR_TRADIFI_STOCKS || REGIONAL_EQUITY_BASE_REGEX.test(base);
 }
 
 /**
@@ -461,7 +517,8 @@ export function getUnderlyingStockSymbol(symbol: string, contractType?: string):
  * Returns human-readable stock company/ETF name if available.
  */
 export function getTradFiStockName(stockSymbol: string): string | undefined {
-  return POPULAR_TRADIFI_STOCKS[stockSymbol.toUpperCase()];
+  const upper = stockSymbol.toUpperCase();
+  return POPULAR_TRADIFI_STOCKS[upper] ?? dynamicStockNames.get(upper);
 }
 
 /**
@@ -489,6 +546,7 @@ export const TRADIFI_INDUSTRIES: Record<string, string> = {
   XLE: "PETROLEUM",
   EQT: "ENERGY",
   URNM: "ENERGY",
+  CCJ: "ENERGY",
   NEE: "ENERGY",
   CEG: "ENERGY",
   VST: "ENERGY",
@@ -558,6 +616,8 @@ export const TRADIFI_INDUSTRIES: Record<string, string> = {
   HK0700: "TECH",
   TENCENT: "TECH",
   HK1810: "TECH",
+  XIAOMI: "TECH",
+  HK1888: "MATERIALS",
   HK0992: "TECH",
   NAVER: "TECH",
   GLW: "TECH",
@@ -585,6 +645,7 @@ export const TRADIFI_INDUSTRIES: Record<string, string> = {
   APP: "AI",
   OPENAI: "AI",
   ANTHROPIC: "AI",
+  ANT: "AI",
   MINIMAX: "AI",
   ZHIPU: "AI",
   MOONSHOT: "AI",
@@ -607,6 +668,7 @@ export const TRADIFI_INDUSTRIES: Record<string, string> = {
   BNC: "CRYPTO",
   ZCSH: "CRYPTO",
   BITO: "CRYPTO ETF",
+  IBIT: "CRYPTO ETF",
   BA: "DEFENSE",
   RTX: "DEFENSE",
   SPCX: "AEROSPACE",
@@ -621,6 +683,7 @@ export const TRADIFI_INDUSTRIES: Record<string, string> = {
   STRC: "ROBOTICS",
   TSLA: "EV",
   RIVN: "EV",
+  NIO: "EV",
   BYD: "EV",
   UBER: "MOBILITY",
   HYUNDAI: "AUTO",
@@ -715,6 +778,7 @@ export const TRADIFI_INDUSTRIES: Record<string, string> = {
   MW: "2X ETF",
   MUU: "2X ETF",
   NVDL: "2X ETF",
+  AMDL: "2X ETF",
   TSLL: "2X ETF",
   MSTU: "2X ETF",
   CSOPSAMSUNG2L: "2X ETF",
@@ -738,6 +802,8 @@ export const TRADIFI_INDUSTRIES: Record<string, string> = {
   VOO: "ETF",
   TLT: "ETF",
   ARKK: "ETF",
+  IGV: "ETF",
+  ARTY: "ETF",
   XLF: "ETF",
   XLK: "ETF",
   XBI: "ETF",

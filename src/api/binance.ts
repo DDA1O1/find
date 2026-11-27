@@ -11,6 +11,7 @@ import {
   getTradFiStockName,
   isTradFiFuturesSymbol,
   registerTradFiPerpetualSymbol,
+  setTradFiRefPrice,
 } from "./tradifiPairs";
 import { ReconnectingWebSocket } from "./reconnectingWebSocket";
 import { eventBus, type ConnectionStatus } from "../core/eventBus";
@@ -77,6 +78,7 @@ interface ExchangeSymbolInfo {
   status: string;
   contractType: string;
   quoteAsset: string;
+  underlyingType?: string;
 }
 
 /**
@@ -98,6 +100,7 @@ export async function fetchFutures24hTickers(): Promise<WatchlistTicker[]> {
   // Valid perpetual contracts currently TRADING
   let validPerpetualSymbols: Set<string> | null = null;
   const contractTypeMap = new Map<string, string>();
+  const underlyingTypeMap = new Map<string, string>();
   if (infoRes && infoRes.ok) {
     const exchangeInfo: { symbols: ExchangeSymbolInfo[] } = await infoRes.json();
     for (const s of exchangeInfo.symbols) {
@@ -107,9 +110,12 @@ export async function fetchFutures24hTickers(): Promise<WatchlistTicker[]> {
         (s.contractType === "PERPETUAL" || s.contractType === "TRADIFI_PERPETUAL")
       ) {
         if (s.contractType === "TRADIFI_PERPETUAL") {
-          registerTradFiPerpetualSymbol(s.symbol);
+          registerTradFiPerpetualSymbol(s.symbol, s.underlyingType);
         }
         contractTypeMap.set(s.symbol, s.contractType);
+        if (s.underlyingType) {
+          underlyingTypeMap.set(s.symbol, s.underlyingType);
+        }
       }
     }
     validPerpetualSymbols = new Set(contractTypeMap.keys());
@@ -129,6 +135,17 @@ export async function fetchFutures24hTickers(): Promise<WatchlistTicker[]> {
       const contractType = isTradFi
         ? "TRADIFI_PERPETUAL"
         : contractTypeMap.get(t.symbol) || "PERPETUAL";
+      const underlyingType = underlyingTypeMap.get(t.symbol);
+      const price = parseFloat(t.lastPrice);
+
+      if (isTradFi) {
+        if (underlyingType) {
+          registerTradFiPerpetualSymbol(t.symbol, underlyingType, price);
+        } else {
+          setTradFiRefPrice(t.symbol, price);
+        }
+      }
+
       const stockName = isTradFi ? getTradFiStockName(base) : undefined;
       const industry = getTradFiIndustry(base);
 
@@ -139,8 +156,9 @@ export async function fetchFutures24hTickers(): Promise<WatchlistTicker[]> {
         name: stockName,
         industry,
         contractType,
-        price: parseFloat(t.lastPrice),
-        prevPrice: parseFloat(t.lastPrice),
+        underlyingType,
+        price,
+        prevPrice: price,
         change24h: parseFloat(t.priceChangePercent),
         high24h: parseFloat(t.highPrice),
         low24h: parseFloat(t.lowPrice),

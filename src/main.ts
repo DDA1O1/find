@@ -8,8 +8,9 @@ import {
   RateLimitError,
 } from "./api/binance";
 import { candleCache } from "./api/candleCache";
-import { fetchStockEvents, mergeCorporateEvents } from "./api/stockFetch";
+import { fetchStockEvents, mergeCorporateEvents, type StockQuoteMeta } from "./api/stockFetch";
 import { getUnderlyingStockSymbol } from "./api/tradifiPairs";
+import { isUsEquityYahooSymbol, resolveStaticYahooSymbol } from "./api/yahooSymbolResolver";
 import { WatchlistComponent, type WatchlistFilter } from "./components/watchlist";
 import { HeaderComponent } from "./components/header";
 import { ToolbarComponent } from "./components/toolbar";
@@ -42,6 +43,8 @@ export class App {
   private unbindMobileListeners?: () => void;
   private eventBusUnsubs: Array<() => void> = [];
   private loadSeq = 0;
+  private loadedSymbol: string | null = null;
+  private loadedInterval: Timeframe | null = null;
   private isDestroyed = false;
 
   constructor() {
@@ -402,13 +405,29 @@ export class App {
     this.catalogSyncInterval = window.setInterval(async () => {
       try {
         const freshTickers = await fetchFutures24hTickers();
-        const { added, removed } = this.watchlist.syncTickers(freshTickers);
+        const { added, removed, upgradedTradFi } = this.watchlist.syncTickers(freshTickers);
 
         for (const t of freshTickers) {
+          const prev = stateManager.allTickers.get(t.symbol);
+          if (prev?.name && !t.name) {
+            t.name = prev.name;
+          }
           stateManager.allTickers.set(t.symbol, t);
         }
         for (const sym of removed) {
           stateManager.allTickers.delete(sym);
+        }
+
+        for (const sym of [...added, ...upgradedTradFi]) {
+          candleCache.invalidate(sym);
+        }
+
+        if (upgradedTradFi.includes(stateManager.activeSymbol)) {
+          const updatedTicker = stateManager.allTickers.get(stateManager.activeSymbol);
+          if (updatedTicker) {
+            this.header.setTicker(updatedTicker);
+          }
+          void this.loadCandles(stateManager.activeSymbol, stateManager.activeTimeframe);
         }
 
         if (added.length > 0) {
@@ -433,6 +452,20 @@ export class App {
     }, 120000);
   }
 
+  private applyDiscoveredStockName(symbol: string, meta?: StockQuoteMeta): void {
+    const shortName = meta?.shortName?.trim();
+    if (!shortName) return;
+
+    const ticker = stateManager.allTickers.get(symbol);
+    if (!ticker || ticker.name) return;
+
+    ticker.name = shortName;
+    this.watchlist.updateTickerName(symbol, shortName);
+    if (symbol === stateManager.activeSymbol) {
+      this.header.setTicker(ticker);
+    }
+  }
+
   private async loadCandles(symbol: string, interval: Timeframe): Promise<void> {
     const seq = ++this.loadSeq;
     const cached = candleCache.get(symbol, interval);
@@ -440,13 +473,17 @@ export class App {
       // 0ms instantaneous render from in-memory cache
       this.hideLoading();
       this.chartManager.setData(cached.candles, interval, cached.events ?? null);
+      this.loadedSymbol = symbol;
+      this.loadedInterval = interval;
+
+      this.applyDiscoveredStockName(symbol, cached.meta);
 
       const lastCandle = cached.candles[cached.candles.length - 1];
       if (lastCandle) {
         this.header.updatePriceOnly(lastCandle.close);
       }
 
-      void this.enrichCorporateEvents(symbol, interval, cached.events, seq);
+      void this.enrichCorporateEvents(symbol, interval, cached.events, cached.meta, seq);
       this.triggerPrefetch();
       return;
     }
@@ -456,19 +493,23 @@ export class App {
     }, 120);
 
     try {
-      const { candles, events } = await candleCache.getOrFetch(symbol, interval, 500);
+      const { candles, meta, events } = await candleCache.getOrFetch(symbol, interval, 500);
       window.clearTimeout(spinnerTimer);
       if (this.isDestroyed || seq !== this.loadSeq) return;
 
       this.chartManager.setData(candles, interval, events ?? null);
+      this.loadedSymbol = symbol;
+      this.loadedInterval = interval;
       this.hideLoading();
+
+      this.applyDiscoveredStockName(symbol, meta);
 
       const lastCandle = candles[candles.length - 1];
       if (lastCandle) {
         this.header.updatePriceOnly(lastCandle.close);
       }
 
-      void this.enrichCorporateEvents(symbol, interval, events, seq);
+      void this.enrichCorporateEvents(symbol, interval, events, meta, seq);
       this.triggerPrefetch();
     } catch (err) {
       window.clearTimeout(spinnerTimer);
@@ -495,6 +536,7 @@ export class App {
     symbol: string,
     interval: Timeframe,
     baseEvents: CorporateEventsData | undefined,
+    meta: StockQuoteMeta | undefined,
     seq: number,
   ): Promise<void> {
     if (this.isMobileViewport()) return;
@@ -502,7 +544,13 @@ export class App {
     const stockSym = getUnderlyingStockSymbol(symbol);
     if (!stockSym) return;
 
-    const nasdaqEvents = await fetchStockEvents(stockSym);
+    const resolvedYahooSym = meta?.symbol || resolveStaticYahooSymbol(stockSym);
+    const eventCurrency = meta?.originalCurrency || meta?.currency;
+    if (!isUsEquityYahooSymbol(resolvedYahooSym, eventCurrency)) {
+      return;
+    }
+
+    const nasdaqEvents = await fetchStockEvents(resolvedYahooSym);
     if (this.isDestroyed || seq !== this.loadSeq || !nasdaqEvents) return;
 
     const merged = mergeCorporateEvents(baseEvents, nasdaqEvents);
@@ -527,7 +575,13 @@ export class App {
       stateManager.activeSymbol,
       stateManager.activeTimeframe,
       (candle: CandleData, isClosed: boolean) => {
-        this.chartManager.updateCandle(candle, isClosed);
+        if (
+          this.loadedSymbol !== stateManager.activeSymbol ||
+          this.loadedInterval !== stateManager.activeTimeframe
+        ) {
+          return;
+        }
+        this.chartManager.updateCandle({ ...candle, source: "binance" }, isClosed);
         this.header.updatePriceOnly(candle.close);
         this.watchlist.updateSingleTickerPrice(stateManager.activeSymbol, candle.close);
       },

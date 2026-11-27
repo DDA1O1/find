@@ -1,7 +1,14 @@
 import type { CandleData, CorporateEventsData, Timeframe } from "../types";
 import { fetchKlines } from "./binance";
 import { fetchStockCandles, type StockQuoteMeta } from "./stockFetch";
-import { getUnderlyingStockSymbol, mergeHistoricalCandles } from "./tradifiPairs";
+import {
+  getTradFiRefPrice,
+  getTradFiUnderlyingType,
+  getUnderlyingStockSymbol,
+  mergeHistoricalCandles,
+  registerTradFiStockName,
+  setTradFiRefPrice,
+} from "./tradifiPairs";
 
 interface CacheEntry {
   candles: CandleData[];
@@ -122,20 +129,49 @@ export class CandleCacheManager {
         return { candles, meta, events };
       }
 
-      // Check if this Binance futures pair is a TradFi stock perpetual (e.g. NVDAUSDT, TSLAUSDT)
+      // Check if this Binance futures pair is a TradFi stock perpetual (e.g. NVDAUSDT, XIAOMIUSDT)
       const tradFiStock = getUnderlyingStockSymbol(symbol);
       if (tradFiStock) {
+        const underlyingType = getTradFiUnderlyingType(symbol);
+        const initialRefPrice = getTradFiRefPrice(symbol);
+
         // Fetch Binance candles and Yahoo historical stock candles concurrently
         const [binanceResult, yahooResult] = await Promise.allSettled([
           fetchKlines(symbol, timeframe, limit),
-          fetchStockCandles(tradFiStock, timeframe),
+          fetchStockCandles(tradFiStock, timeframe, {
+            underlyingType,
+            refPrice: initialRefPrice,
+          }),
         ]);
 
         const binanceCandles = binanceResult.status === "fulfilled" ? binanceResult.value : [];
-        const yahooCandles = yahooResult.status === "fulfilled" ? yahooResult.value.candles : [];
-        const yahooMeta = yahooResult.status === "fulfilled" ? yahooResult.value.meta : undefined;
-        const yahooEvents =
-          yahooResult.status === "fulfilled" ? yahooResult.value.events : undefined;
+        let yahooCandles = yahooResult.status === "fulfilled" ? yahooResult.value.candles : [];
+        let yahooMeta = yahooResult.status === "fulfilled" ? yahooResult.value.meta : undefined;
+        let yahooEvents = yahooResult.status === "fulfilled" ? yahooResult.value.events : undefined;
+
+        // If refPrice was unknown on initial load and Yahoo failed to resolve/align,
+        // retry once using Binance's live candle close price as refPrice.
+        if (yahooCandles.length === 0 && binanceCandles.length > 0 && !initialRefPrice) {
+          const fallbackRefPrice = binanceCandles[binanceCandles.length - 1].close;
+          if (fallbackRefPrice > 0) {
+            setTradFiRefPrice(symbol, fallbackRefPrice);
+            try {
+              const retryRes = await fetchStockCandles(tradFiStock, timeframe, {
+                underlyingType,
+                refPrice: fallbackRefPrice,
+              });
+              yahooCandles = retryRes.candles;
+              yahooMeta = retryRes.meta;
+              yahooEvents = retryRes.events;
+            } catch {
+              // Fall back cleanly to Binance-only candles
+            }
+          }
+        }
+
+        if (yahooMeta?.shortName) {
+          registerTradFiStockName(tradFiStock, yahooMeta.shortName);
+        }
 
         if (binanceCandles.length > 0 && yahooCandles.length > 0) {
           const merged = mergeHistoricalCandles(binanceCandles, yahooCandles, timeframe);
@@ -173,6 +209,15 @@ export class CandleCacheManager {
       if (!this.cache.has(key) && !this.inFlightRequests.has(key)) {
         // Fetch quietly in background
         void this.fetchAndStore(sym, timeframe, limit).catch(() => {});
+      }
+    }
+  }
+
+  public invalidate(symbol: string): void {
+    const prefix = `${symbol}_`;
+    for (const key of Array.from(this.cache.keys())) {
+      if (key.startsWith(prefix)) {
+        this.cache.delete(key);
       }
     }
   }
