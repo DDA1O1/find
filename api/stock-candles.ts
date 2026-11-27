@@ -16,7 +16,7 @@ import {
   shouldConvertCurrencyToUsd,
   type FxRatePoint,
   type YahooSearchQuote,
-} from "../src/api/yahooSymbolResolver";
+} from "../src/api/yahooSymbolResolver.js";
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
@@ -25,12 +25,87 @@ const YAHOO_HOSTS = ["query2.finance.yahoo.com", "query1.finance.yahoo.com"] as 
 
 const RESOLVED_SYMBOL_TTL_MS = 60 * 60 * 1000; // 1 hour
 const FX_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const YAHOO_AUTH_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 const resolvedSymbolCache = new Map<string, { yahooSymbol: string; cachedAt: number }>();
 const fxSeriesCache = new Map<
   string,
   { points: FxRatePoint[]; latestRate: number; cachedAt: number }
 >();
+
+let yahooAuthCache: { cookie: string; crumb: string; fetchedAt: number } | null = null;
+let yahooAuthInFlight: Promise<{ cookie: string; crumb: string } | null> | null = null;
+
+function buildYahooHeaders(cookie?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    "User-Agent": USER_AGENT,
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    Origin: "https://finance.yahoo.com",
+    Referer: "https://finance.yahoo.com/",
+  };
+  if (cookie) {
+    headers.Cookie = cookie;
+  }
+  return headers;
+}
+
+async function getYahooCookieCrumb(
+  forceRefresh = false,
+): Promise<{ cookie: string; crumb: string } | null> {
+  if (
+    !forceRefresh &&
+    yahooAuthCache &&
+    Date.now() - yahooAuthCache.fetchedAt < YAHOO_AUTH_TTL_MS
+  ) {
+    return { cookie: yahooAuthCache.cookie, crumb: yahooAuthCache.crumb };
+  }
+  if (yahooAuthInFlight) {
+    return yahooAuthInFlight;
+  }
+
+  yahooAuthInFlight = (async () => {
+    try {
+      const seedRes = await fetch("https://fc.yahoo.com", {
+        headers: { "User-Agent": USER_AGENT, Accept: "text/html,*/*" },
+        redirect: "manual",
+        signal: AbortSignal.timeout(5000),
+      });
+
+      const setCookies: string[] =
+        typeof seedRes.headers.getSetCookie === "function"
+          ? seedRes.headers.getSetCookie()
+          : seedRes.headers.get("set-cookie")
+            ? [seedRes.headers.get("set-cookie")!]
+            : [];
+
+      const cookie = setCookies
+        .map((c) => c.split(";")[0]?.trim())
+        .filter(Boolean)
+        .join("; ");
+
+      if (!cookie) return null;
+
+      const crumbRes = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
+        headers: buildYahooHeaders(cookie),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!crumbRes.ok) return null;
+
+      const crumb = (await crumbRes.text()).trim();
+      if (!crumb || crumb.startsWith("<")) return null;
+
+      yahooAuthCache = { cookie, crumb, fetchedAt: Date.now() };
+      return { cookie, crumb };
+    } catch {
+      return null;
+    } finally {
+      yahooAuthInFlight = null;
+    }
+  })();
+
+  return yahooAuthInFlight;
+}
 
 interface YahooRawSplit {
   date?: number;
@@ -188,31 +263,59 @@ async function fetchYahooJsonWithFallback(pathAndQuery: string): Promise<{
   let lastData: unknown = null;
   let lastError: unknown = null;
 
-  for (const host of YAHOO_HOSTS) {
-    const yahooUrl = `https://${host}${pathAndQuery}`;
-    try {
-      const yahooRes = await fetch(yahooUrl, {
-        headers: {
-          "User-Agent": USER_AGENT,
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(8000),
-      });
-      lastStatus = yahooRes.status;
-      if (yahooRes.ok) {
-        const json = await yahooRes.json();
-        return { ok: true, status: yahooRes.status, data: json };
-      }
+  const tryFetchHosts = async (auth?: { cookie: string; crumb: string } | null) => {
+    const sep = pathAndQuery.includes("?") ? "&" : "?";
+    const fullPath = auth
+      ? `${pathAndQuery}${sep}crumb=${encodeURIComponent(auth.crumb)}`
+      : pathAndQuery;
+
+    for (const host of YAHOO_HOSTS) {
+      const yahooUrl = `https://${host}${fullPath}`;
       try {
-        lastData = await yahooRes.json();
-      } catch {
-        lastData = null;
+        const yahooRes = await fetch(yahooUrl, {
+          headers: buildYahooHeaders(auth?.cookie),
+          signal: AbortSignal.timeout(8000),
+        });
+        lastStatus = yahooRes.status;
+        if (yahooRes.ok) {
+          const json = await yahooRes.json();
+          return { ok: true, status: yahooRes.status, data: json };
+        }
+        try {
+          lastData = await yahooRes.json();
+        } catch {
+          lastData = null;
+        }
+        if (
+          yahooRes.status !== 429 &&
+          yahooRes.status !== 401 &&
+          yahooRes.status !== 403 &&
+          yahooRes.status < 500
+        ) {
+          return { ok: false, status: yahooRes.status, data: lastData };
+        }
+      } catch (err) {
+        lastError = err;
       }
-      if (yahooRes.status !== 429 && yahooRes.status < 500) {
-        return { ok: false, status: yahooRes.status, data: lastData };
-      }
-    } catch (err) {
-      lastError = err;
+    }
+    return null;
+  };
+
+  // First attempt: use cached cookie+crumb if available, otherwise anonymous fast path
+  const cachedAuth =
+    yahooAuthCache && Date.now() - yahooAuthCache.fetchedAt < YAHOO_AUTH_TTL_MS
+      ? { cookie: yahooAuthCache.cookie, crumb: yahooAuthCache.crumb }
+      : null;
+
+  const firstAttempt = await tryFetchHosts(cachedAuth);
+  if (firstAttempt) return firstAttempt;
+
+  // Retry with fresh Yahoo session cookie + crumb on datacenter 401/403/429 challenges
+  if (lastStatus === 401 || lastStatus === 403 || lastStatus === 429) {
+    const freshAuth = await getYahooCookieCrumb(true);
+    if (freshAuth) {
+      const retryAttempt = await tryFetchHosts(freshAuth);
+      if (retryAttempt) return retryAttempt;
     }
   }
 
@@ -594,9 +697,15 @@ export default async function handler(
 
     const finalCandles = resampleCandles(matched.candles, intervalParam as Timeframe);
 
+    const isDailyOrWeekly = intervalParam === "1d" || intervalParam === "1w";
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json");
-    res.setHeader("Cache-Control", "public, max-age=15, s-maxage=30");
+    res.setHeader(
+      "Cache-Control",
+      isDailyOrWeekly
+        ? "public, max-age=60, s-maxage=300, stale-while-revalidate=900"
+        : "public, max-age=15, s-maxage=60, stale-while-revalidate=180",
+    );
     res.end(
       JSON.stringify({
         candles: finalCandles,
