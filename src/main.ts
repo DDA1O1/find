@@ -18,6 +18,7 @@ import { RelativityHudComponent } from "./components/relativityHud";
 import { SearchModalComponent } from "./components/searchModal";
 import { ToastComponent } from "./components/toast";
 import { OfflineBannerComponent } from "./components/offlineBanner";
+import { DisciplineGateComponent } from "./components/disciplineGate";
 import {
   calculateRollingRelativity,
   DEFAULT_RELATIVITY_WINDOW,
@@ -38,6 +39,7 @@ export class App {
   private searchModal!: SearchModalComponent;
   private toast!: ToastComponent;
   private offlineBanner!: OfflineBannerComponent;
+  private disciplineGate!: DisciplineGateComponent;
 
   private loadingOverlay = document.getElementById("chart-loading")!;
   private loadingText = document.getElementById("chart-loading-text")!;
@@ -65,9 +67,10 @@ export class App {
   }
 
   private async init(): Promise<void> {
-    // 0. Initialize Notifications & Offline Banner (A5, E1)
+    // 0. Initialize Notifications, Offline Banner & Pre-Session Discipline Gate
     this.toast = new ToastComponent();
     this.offlineBanner = new OfflineBannerComponent();
+    this.disciplineGate = new DisciplineGateComponent();
 
     // 1. Initialize Header
     const headerEl = document.getElementById("app-header")!;
@@ -320,8 +323,8 @@ export class App {
         return;
       }
 
-      // If the search modal is open, let it handle everything
-      if (this.searchModal.opened) return;
+      // If the discipline gate or search modal is open, let it handle everything
+      if (this.disciplineGate?.opened || this.searchModal.opened) return;
 
       // Spacebar or ArrowDown: Advance to next coin and open chart
       if (e.code === "Space" || e.key === " " || e.key === "ArrowDown") {
@@ -755,6 +758,7 @@ export class App {
     this.searchModal?.destroy();
     this.offlineBanner?.destroy();
     this.toast?.destroy();
+    this.disciplineGate?.destroy();
   }
 }
 
